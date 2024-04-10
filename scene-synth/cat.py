@@ -1,7 +1,12 @@
 import argparse
 import torch
+from torch.utils.data import random_split
+import json
+import numpy as np
 import torch.optim as optim
 from latent_dataset import LatentDataset
+from scenesynth_dataset import SceneSynthDataset
+from pathlib import Path
 import torch.nn as nn
 import torch.nn.functional as F
 from models import *
@@ -79,12 +84,18 @@ class NextCategory(nn.Module):
 # ---------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
+    # TODO refactor to be an arg
+    scenesynth_loc = Path.cwd().parent / "fastsynth_formatted_dataset.json"
 
-    data_root_dir = utils.get_data_root_dir()
-    with open(f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r") as f:
-        lines = f.readlines()
-    num_categories = len(lines)-2  # -2 for 'window' and 'door'
-    
+
+    if scenesynth_loc:
+        num_categories = 5
+    else:
+        data_root_dir = utils.get_data_root_dir()
+        with open(f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r") as f:
+            lines = f.readlines()
+        num_categories = len(lines)-2  # -2 for 'window' and 'door'
+        
     num_input_channels = num_categories+8
     
     logfile = open(f"{save_dir}/log.txt", 'w')
@@ -95,26 +106,52 @@ if __name__ == '__main__':
     
     
     LOG('Building model...')
-    model = NextCategory(num_input_channels, num_categories, latent_dim).cuda()
+    model = NextCategory(num_input_channels, num_categories, latent_dim)
+    # uncomment if computer has graphics card
+    #model = model.cuda()
     
     
     LOG('Building datasets...')
-    train_dataset = LatentDataset(
-        data_folder = args.data_folder,
-        scene_indices = (0, args.train_size),
-        cat_only = True,
-        importance_order = True
-    )
-    validation_dataset = LatentDataset(
-        data_folder = args.data_folder,
-        scene_indices = (args.train_size, args.train_size+160),
-        # seed = 42,
-        cat_only = True,
-        importance_order = True
-    )
-    # train_dataset.build_cat2scene()
+
+    if scenesynth_loc:
+        # define object hook to recover np arrays
+        def custom_decoder(dict_data):
+            if "input_img" in dict_data:
+                dict_data["input_img"] = np.array(dict_data["input_img"])
+            if "t_cat" in dict_data:
+                dict_data["t_cat"] = int(dict_data["t_cat"])
+            return dict_data
+        # load full dataset
+        with open(scenesynth_loc, 'r') as file:
+            loaded_scene_dataset = json.load(file, object_hook=custom_decoder)
+            tensored_dataset = SceneSynthDataset(loaded_scene_dataset)
+            print(f"Loaded scenesynth dataset at {scenesynth_loc}")
+
+        # Define the sizes of your splits. For example, 80% train, 20% validation
+        total_size = len(loaded_scene_dataset)
+        train_size = int(0.8 * total_size)
+        validation_size = total_size - train_size
+
+        # Split the dataset
+        train_dataset, validation_dataset = random_split(tensored_dataset, [train_size, validation_size])
     
-    
+    else:
+        train_dataset = LatentDataset(
+            data_folder = args.data_folder,
+            scene_indices = (0, args.train_size),
+            cat_only = True,
+            importance_order = True
+        )
+        validation_dataset = LatentDataset(
+            data_folder = args.data_folder,
+            scene_indices = (args.train_size, args.train_size+160),
+            # seed = 42,
+            cat_only = True,
+            importance_order = True
+        )
+        # train_dataset.build_cat2scene()
+        
+        
     LOG('Building data loader...')
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -159,6 +196,7 @@ if __name__ == '__main__':
         global num_seen, current_epoch, loss_running_avg
     
         for batch_idx, (input_img, t_cat, catcount) in enumerate(train_loader):
+            print(f"img: {type(input_img)}, t_cat: {type(t_cat)}, catcount: {type(catcount)}")
     
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
