@@ -201,7 +201,8 @@ if __name__ == '__main__':
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
     
-            input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+            # uncomment if graphics card
+            #input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
     
             optimizer.zero_grad()
             logits = model(input_img, catcount)
@@ -239,7 +240,8 @@ if __name__ == '__main__':
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
     
-            input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+            # uncomment if graphics card
+            #input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
     
             with torch.no_grad():
                 logits = model(input_img, catcount)
