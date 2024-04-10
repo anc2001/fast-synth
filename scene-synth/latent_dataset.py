@@ -441,7 +441,6 @@ class LatentDataset(data.Dataset):
 
 # A batch sampler that returns a batch of identical category indices
 # Used so that we can guarantee that the category is the same across the batch during training.
-from torch._six import int_classes as _int_classes
 class SameCategoryBatchSampler(object):
     r"""Yield a mini-batch of indices.
 
@@ -454,15 +453,15 @@ class SameCategoryBatchSampler(object):
     """
 
     def __init__(self, n_categories, epoch_size, batch_size, drop_last=False):
-        if not isinstance(n_categories, _int_classes) or isinstance(n_categories, bool) or \
+        if not isinstance(n_categories, int) or isinstance(n_categories, bool) or \
                 batch_size <= 0:
             raise ValueError("n_categories should be a positive integeral value, "
                              "but got n_categories={}".format(n_categories))
-        if not isinstance(epoch_size, _int_classes) or isinstance(epoch_size, bool) or \
+        if not isinstance(epoch_size, int) or isinstance(epoch_size, bool) or \
                 batch_size <= 0:
             raise ValueError("epoch_size should be a positive integeral value, "
                              "but got epoch_size={}".format(epoch_size))
-        if not isinstance(batch_size, _int_classes) or isinstance(batch_size, bool) or \
+        if not isinstance(batch_size, int) or isinstance(batch_size, bool) or \
                 batch_size <= 0:
             raise ValueError("batch_size should be a positive integeral value, "
                              "but got batch_size={}".format(batch_size))
