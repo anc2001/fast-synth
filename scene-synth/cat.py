@@ -105,7 +105,7 @@ if __name__ == '__main__':
         logfile.flush()
     
     
-    LOG('Building model...')
+    LOG(f'Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim')
     model = NextCategory(num_input_channels, num_categories, latent_dim)
     # uncomment if computer has graphics card
     #model = model.cuda()
@@ -126,6 +126,7 @@ if __name__ == '__main__':
             loaded_scene_dataset = json.load(file, object_hook=custom_decoder)
             tensored_dataset = SceneSynthDataset(loaded_scene_dataset)
             print(f"Loaded scenesynth dataset at {scenesynth_loc}")
+            print(np.shape(loaded_scene_dataset[0].get('input_img')))
 
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(loaded_scene_dataset)
