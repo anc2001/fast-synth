@@ -89,14 +89,15 @@ if __name__ == '__main__':
 
 
     if scenesynth_loc:
-        num_categories = 5
+        num_categories = 7
+        num_input_channels = 13
     else:
         data_root_dir = utils.get_data_root_dir()
         with open(f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r") as f:
             lines = f.readlines()
         num_categories = len(lines)-2  # -2 for 'window' and 'door'
         
-    num_input_channels = num_categories+8
+        num_input_channels = num_categories+8
     
     logfile = open(f"{save_dir}/log.txt", 'w')
     def LOG(msg):
@@ -126,7 +127,7 @@ if __name__ == '__main__':
             loaded_scene_dataset = json.load(file, object_hook=custom_decoder)
             tensored_dataset = SceneSynthDataset(loaded_scene_dataset)
             print(f"Loaded scenesynth dataset at {scenesynth_loc}")
-            print(np.shape(loaded_scene_dataset[0].get('input_img')))
+            print(np.shape(loaded_scene_dataset[0].get('catcount')))
 
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(loaded_scene_dataset)
@@ -206,6 +207,8 @@ if __name__ == '__main__':
             #input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
     
             optimizer.zero_grad()
+            print(input_img.shape)
+            print(catcount.shape)
             logits = model(input_img, catcount)
     
             loss = F.cross_entropy(logits, t_cat)
