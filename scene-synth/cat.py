@@ -127,7 +127,7 @@ if __name__ == '__main__':
             loaded_scene_dataset = json.load(file, object_hook=custom_decoder)
             tensored_dataset = SceneSynthDataset(loaded_scene_dataset)
             print(f"Loaded scenesynth dataset at {scenesynth_loc}")
-            print(np.shape(loaded_scene_dataset[0].get('catcount')))
+            #print(np.shape(loaded_scene_dataset[0].get('catcount')))
 
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(loaded_scene_dataset)
@@ -198,7 +198,6 @@ if __name__ == '__main__':
         global num_seen, current_epoch, loss_running_avg
     
         for batch_idx, (input_img, t_cat, catcount) in enumerate(train_loader):
-            print(f"img: {type(input_img)}, t_cat: {type(t_cat)}, catcount: {type(catcount)}")
     
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
@@ -207,8 +206,6 @@ if __name__ == '__main__':
             #input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
     
             optimizer.zero_grad()
-            print(input_img.shape)
-            print(catcount.shape)
             logits = model(input_img, catcount)
     
             loss = F.cross_entropy(logits, t_cat)
