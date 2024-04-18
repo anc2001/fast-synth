@@ -10,7 +10,7 @@ from pathlib import Path
 import torch.nn as nn
 import torch.nn.functional as F
 from models import *
-import math
+import sys
 import utils
 
 """
@@ -25,6 +25,7 @@ parser.add_argument('--train-size', type=int, default=5000, metavar='N')
 parser.add_argument('--save-dir', type=str, default="cat_test", metavar='S')
 parser.add_argument('--save-every-n-epochs', type=int, default=5, metavar='N')
 parser.add_argument('--lr', type=float, default=0.0005, metavar='N')
+parser.add_argument('--ss_loc', type=str, help='Location of scenesynth category dataset')
 args = parser.parse_args()
 
 save_dir = args.save_dir
@@ -85,7 +86,11 @@ class NextCategory(nn.Module):
 
 if __name__ == '__main__':
     # TODO refactor to be an arg
-    scenesynth_loc = Path.cwd().parent / "fastsynth_formatted_dataset.json"
+    #scenesynth_loc = Path.cwd().parent / "fastsynth_formatted_dataset.json"
+    scenesynth_loc = Path(args.ss_loc)
+    if not scenesynth_loc.exists():
+        print("ERROR: scenesynth path must exist! Specify with --ss_loc")
+        sys.exit(1)
 
 
     if scenesynth_loc:
@@ -115,27 +120,14 @@ if __name__ == '__main__':
     LOG('Building datasets...')
 
     if scenesynth_loc:
-        # define object hook to recover np arrays
-        def custom_decoder(dict_data):
-            if "input_img" in dict_data:
-                dict_data["input_img"] = np.array(dict_data["input_img"])
-            if "t_cat" in dict_data:
-                dict_data["t_cat"] = int(dict_data["t_cat"])
-            return dict_data
-        # load full dataset
-        with open(scenesynth_loc, 'r') as file:
-            loaded_scene_dataset = json.load(file, object_hook=custom_decoder)
-            tensored_dataset = SceneSynthDataset(loaded_scene_dataset)
-            print(f"Loaded scenesynth dataset at {scenesynth_loc}")
-            #print(np.shape(loaded_scene_dataset[0].get('catcount')))
-
+        scene_dataset = utils.get_scene_dataset(scenesynth_loc)
         # Define the sizes of your splits. For example, 80% train, 20% validation
-        total_size = len(loaded_scene_dataset)
+        total_size = len(scene_dataset)
         train_size = int(0.8 * total_size)
         validation_size = total_size - train_size
 
         # Split the dataset
-        train_dataset, validation_dataset = random_split(tensored_dataset, [train_size, validation_size])
+        train_dataset, validation_dataset = random_split(scene_dataset, [train_size, validation_size])
     
     else:
         train_dataset = LatentDataset(

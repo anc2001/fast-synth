@@ -2,12 +2,21 @@ import gzip
 import math
 import os
 import os.path
+from pathlib import Path
 import pickle
 import torch
 import torch.nn.functional as F
 from contextlib import contextmanager
 from scipy.ndimage import distance_transform_edt
 import sys
+
+# Get the absolute path to the root of the project by navigating up two levels from this file
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.append(str(project_root))
+
+from src.data.dataset.scene_dataset import SceneDataset
+from src.io_utils import read_data
+from src.scripts.category_prediction import generate_category_dataset
 
 def ensuredir(dirname):
     """Ensure a directory exists"""
@@ -52,6 +61,20 @@ def get_data_root_dir():
     else:
         root_dir = os.path.dirname(os.path.abspath(__file__))
         return f"{root_dir}/data"
+
+# stolen from category_prediction.py; returns category dataset or creates it if missing
+def get_scene_dataset(dataset_path: Path) -> SceneDataset:
+    scenes_path = dataset_path / "formatted_data" / "parse.pkl"
+    metadata_path = dataset_path / "scene_datasets" / "category.pkl"
+    if not metadata_path.exists():
+        (dataset_path / "scene_datasets").mkdir(parents=True, exist_ok=True)
+        scenes = read_data(scenes_path)
+        print("Generating category dataset")
+        subscenes_meta = read_data(scenes_path.parent / 'subscenes_meta.pkl')
+        generate_category_dataset(scenes, subscenes_meta, metadata_path)
+    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_category")
+    return scene_dataset
+
 
 def memoize(func):
     """
