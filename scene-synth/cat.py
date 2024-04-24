@@ -120,7 +120,7 @@ if __name__ == '__main__':
     LOG('Building datasets...')
 
     if scenesynth_loc:
-        scene_dataset = utils.get_scene_dataset(scenesynth_loc)
+        scene_dataset = utils.get_scene_dataset(scenesynth_loc, "fastsynth_category")
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(scene_dataset)
         train_size = int(0.8 * total_size)

@@ -63,7 +63,7 @@ def get_data_root_dir():
         return f"{root_dir}/data"
 
 # stolen from category_prediction.py; returns category dataset or creates it if missing
-def get_scene_dataset(dataset_path: Path) -> SceneDataset:
+def get_scene_dataset(dataset_path: Path, type: str) -> SceneDataset:
     scenes_path = dataset_path / "formatted_data" / "parse.pkl"
     metadata_path = dataset_path / "scene_datasets" / "category.pkl"
     if not metadata_path.exists():
@@ -72,7 +72,7 @@ def get_scene_dataset(dataset_path: Path) -> SceneDataset:
         print("Generating category dataset")
         subscenes_meta = read_data(scenes_path.parent / 'subscenes_meta.pkl')
         generate_category_dataset(scenes, subscenes_meta, metadata_path)
-    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_category")
+    scene_dataset = SceneDataset(scenes_path, metadata_path, type)
     return scene_dataset
 
 
