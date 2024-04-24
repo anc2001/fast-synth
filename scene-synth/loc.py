@@ -174,17 +174,24 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.001, metavar='N')
     parser.add_argument('--eps', type=float, default=1e-6, metavar='N')
     parser.add_argument('--centroid-weight', type=float, default=10, metavar="N")
+    parser.add_argument('--dataset', type=str, default="grammar")
+    parser.add_argument('--external', action='store_true')
     args = parser.parse_args()
 
     save_dir = args.save_dir
     utils.ensuredir(save_dir)
     batch_size = 16
 
-    with open(f"data/{args.data_folder}/final_categories_frequency", "r") as f:
-        lines = f.readlines()
-    num_categories = len(lines)-2
+    if args.external:
+        from src.object.config import object_types
+        num_categories = len(object_types) - 1
+        num_input_channels = num_categories + 7
+    else:
+        with open(f"data/{args.data_folder}/final_categories_frequency", "r") as f:
+            lines = f.readlines()
+        num_categories = len(lines)-2
 
-    num_input_channels = num_categories+8
+        num_input_channels = num_categories+8
 
     logfile = open(f"{save_dir}/log_location.txt", 'w')
     def LOG(msg):
@@ -207,12 +214,16 @@ if __name__ == '__main__':
     model.cuda()
     cross_entropy.cuda()
 
-    LOG('Building dataset...')
-    train_dataset = LocDataset(
-        data_root_dir = 'data',
-        data_folder = args.data_folder,
-        scene_indices = (0, args.train_size),
-    )
+    if args.external:
+        from src.config import data_filepath
+        train_dataset = utils.get_scene_loc_dataset(data_filepath / args.dataset)
+    else:
+        LOG('Building dataset...')
+        train_dataset = LocDataset(
+            data_root_dir = 'data',
+            data_folder = args.data_folder,
+            scene_indices = (0, args.train_size),
+        )
 
     LOG('Building data loader...')
     train_loader = torch.utils.data.DataLoader(
@@ -251,14 +262,14 @@ if __name__ == '__main__':
         global num_seen, current_epoch
         for batch_idx, (data, target) \
                        in enumerate(train_loader):
-            
+
             data, target = data.cuda(), target.cuda()
-            
+
             optimizer.zero_grad()
             output = model(data)
             loss = cross_entropy(output,target)
-            print(loss)
-            
+            print(loss.cpu().item())
+
             loss.backward()
             optimizer.step()
 
@@ -270,9 +281,9 @@ if __name__ == '__main__':
                 num_seen = 0
                 current_epoch += 1
                 LOG(f'=========================== Epoch {current_epoch} ===========================')
-                if current_epoch % 10 == 0:
-                    torch.save(model.state_dict(), f"{save_dir}/location_{current_epoch}.pt")
-                    torch.save(optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt")
+                # if current_epoch % 10 == 0:
+                torch.save(model.state_dict(), f"{save_dir}/location_{current_epoch}.pt")
+                torch.save(optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt")
 
     while True:
         train()

@@ -50,7 +50,7 @@ def pickle_load_compressed(filename):
     object = pickle.loads(buffer)
     file.close()
     return object
-        
+
 def get_data_root_dir():
     """
     Get root dir of the data, defaults to /data if env viariable is not set
@@ -63,7 +63,7 @@ def get_data_root_dir():
         return f"{root_dir}/data"
 
 # stolen from category_prediction.py; returns category dataset or creates it if missing
-def get_scene_dataset(dataset_path: Path) -> SceneDataset:
+def get_scene_category_dataset(dataset_path: Path) -> SceneDataset:
     scenes_path = dataset_path / "formatted_data" / "parse.pkl"
     metadata_path = dataset_path / "scene_datasets" / "category.pkl"
     if not metadata_path.exists():
@@ -75,6 +75,11 @@ def get_scene_dataset(dataset_path: Path) -> SceneDataset:
     scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_category")
     return scene_dataset
 
+def get_scene_loc_dataset(dataset_path : Path) -> SceneDataset:
+    scenes_path = dataset_path / "formatted_data" / "parse.pkl"
+    metadata_path = dataset_path / "formatted_data" / "subscenes_meta.pkl"
+    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_loc")
+    return scene_dataset
 
 def memoize(func):
     """

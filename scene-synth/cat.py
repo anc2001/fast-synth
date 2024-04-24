@@ -5,13 +5,13 @@ import json
 import numpy as np
 import torch.optim as optim
 from latent_dataset import LatentDataset
-from scenesynth_dataset import SceneSynthDataset
 from pathlib import Path
 import torch.nn as nn
 import torch.nn.functional as F
 from models import *
 import sys
 import utils
+from tqdm import tqdm
 
 """
 Module that predicts the category of the next object
@@ -25,7 +25,8 @@ parser.add_argument('--train-size', type=int, default=5000, metavar='N')
 parser.add_argument('--save-dir', type=str, default="cat_test", metavar='S')
 parser.add_argument('--save-every-n-epochs', type=int, default=5, metavar='N')
 parser.add_argument('--lr', type=float, default=0.0005, metavar='N')
-parser.add_argument('--ss_loc', type=str, help='Location of scenesynth category dataset')
+parser.add_argument('--dataset', type=str, default="grammar")
+parser.add_argument('--external', action='store_true')
 args = parser.parse_args()
 
 save_dir = args.save_dir
@@ -37,7 +38,7 @@ latent_dim = 200
 epoch_size = 10000
 
 
-# ---------------------------------------------------------------------------------------
+# -------------------------- -------------------------------------------------------------
 class NextCategory(nn.Module):
 
     def __init__(self, n_input_channels, n_categories, bottleneck_size):
@@ -87,40 +88,39 @@ class NextCategory(nn.Module):
 if __name__ == '__main__':
     # TODO refactor to be an arg
     #scenesynth_loc = Path.cwd().parent / "fastsynth_formatted_dataset.json"
-    scenesynth_loc = Path(args.ss_loc)
-    if not scenesynth_loc.exists():
-        print("ERROR: scenesynth path must exist! Specify with --ss_loc")
-        sys.exit(1)
+    # scenesynth_loc = Path(args.ss_loc)
+    # if not scenesynth_loc.exists():
+    #     print("ERROR: scenesynth path must exist! Specify with --ss_loc")
+    #     sys.exit(1)
 
-
-    if scenesynth_loc:
-        num_categories = 7
-        num_input_channels = 13
+    if args.external:
+        from src.object.config import object_types
+        num_categories = len(object_types)
+        num_input_channels = num_categories + 6
     else:
         data_root_dir = utils.get_data_root_dir()
         with open(f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r") as f:
             lines = f.readlines()
         num_categories = len(lines)-2  # -2 for 'window' and 'door'
-        
+
         num_input_channels = num_categories+8
-    
+
     logfile = open(f"{save_dir}/log.txt", 'w')
     def LOG(msg):
         print(msg)
         logfile.write(msg + '\n')
         logfile.flush()
-    
-    
+
     LOG(f'Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim')
     model = NextCategory(num_input_channels, num_categories, latent_dim)
     # uncomment if computer has graphics card
-    #model = model.cuda()
-    
-    
+    model = model.cuda()
+
     LOG('Building datasets...')
 
-    if scenesynth_loc:
-        scene_dataset = utils.get_scene_dataset(scenesynth_loc)
+    if args.external:
+        from src.config import data_filepath
+        scene_dataset = utils.get_scene_dataset(data_filepath / args.dataset)
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(scene_dataset)
         train_size = int(0.8 * total_size)
@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
         # Split the dataset
         train_dataset, validation_dataset = random_split(scene_dataset, [train_size, validation_size])
-    
+
     else:
         train_dataset = LatentDataset(
             data_folder = args.data_folder,
@@ -143,9 +143,8 @@ if __name__ == '__main__':
             cat_only = True,
             importance_order = True
         )
-        # train_dataset.build_cat2scene()
-        
-        
+        train_dataset.build_cat2scene()
+
     LOG('Building data loader...')
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -159,55 +158,55 @@ if __name__ == '__main__':
         num_workers = 0,
         shuffle = True
     )
-    
+
     optimizer = optim.Adam(list(model.parameters()),
         lr = args.lr
     )
-    
+
     if args.last_epoch < 0:
         load = False
         starting_epoch = 0
     else:
         load = True
         last_epoch = args.last_epoch
-    
+
     if load:
         LOG('Loading saved models...')
         model.load_state_dict(torch.load(f"{save_dir}/nextcat_{last_epoch}.pt"))
         optimizer.load_state_dict(torch.load(f"{save_dir}/nextcat_optim_backup.pt"))
         starting_epoch = last_epoch + 1
-    
+
     current_epoch = starting_epoch
     num_seen = 0
-    
+
     model.train()
     LOG(f'=========================== Epoch {current_epoch} ===========================')
-    
-    
-    loss_running_avg = 0 
-    
+
+
+    loss_running_avg = 0
+
     def train():
         global num_seen, current_epoch, loss_running_avg
-    
-        for batch_idx, (input_img, t_cat, catcount) in enumerate(train_loader):
-    
+
+        for batch_idx, (input_img, t_cat, catcount) in enumerate(tqdm(train_loader)):
+
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
-    
+
             # uncomment if graphics card
-            #input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
-    
+            input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+
             optimizer.zero_grad()
             logits = model(input_img, catcount)
-    
+
             loss = F.cross_entropy(logits, t_cat)
             loss.backward()
             optimizer.step()
             loss_precision = 4
             LOG(f'Loss: {loss.cpu().data.numpy():{loss_precision}.{loss_precision}}')
-    
+
             num_seen += batch_size
-    
+
             if num_seen % 800 == 0:
                 LOG(f'Examples {num_seen}/{epoch_size}')
             if num_seen > 0 and num_seen % epoch_size == 0:
@@ -218,7 +217,7 @@ if __name__ == '__main__':
                     torch.save(optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt")
                 current_epoch += 1
                 LOG(f'=========================== Epoch {current_epoch} ===========================')
-    
+
     def validate():
         LOG('Validating')
         model.eval()
@@ -227,25 +226,25 @@ if __name__ == '__main__':
         num_correct_top5 = 0
         num_batches = 0
         num_items = 0
-    
+
         for batch_idx, (input_img, t_cat, catcount) in enumerate(validation_loader):
-    
+
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
-    
+
             # uncomment if graphics card
-            #input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
-    
+            input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+
             with torch.no_grad():
                 logits = model(input_img, catcount)
                 loss = F.cross_entropy(logits, t_cat)
-    
+
             total_loss += loss.cpu().data.numpy()
-    
+
             # TODO: Why is top1 always giving me zero...?
             _, argmax = logits.max(dim=-1)
             num_correct_top1 += (argmax == t_cat).sum()
-    
+
             lsorted, lsorted_idx = torch.sort(logits, dim=-1, descending=True)
             lsorted_idx_top5 = lsorted_idx[:, 0:5]
             num_correct = torch.zeros(input_img.shape[0]).cuda()
@@ -253,15 +252,15 @@ if __name__ == '__main__':
                 correct = lsorted_idx_top5[0:, i] == t_cat
                 num_correct = torch.max(num_correct, correct.float())
             num_correct_top5 += num_correct.sum()
-    
+
             num_batches += 1
             num_items += input_img.shape[0]
-    
+
         LOG(f'Average Loss: {total_loss / num_batches}')
         LOG(f'Top 1 Accuracy: {num_correct_top1 / num_items}')
         LOG(f'Top 5 Accuracy: {num_correct_top5 / num_items}')
         model.train()
-    
+
     # Train forever (until we stop it)
     while True:
         train()

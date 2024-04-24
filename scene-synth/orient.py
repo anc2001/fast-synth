@@ -38,7 +38,7 @@ class Model(nn.Module):
                 netdict[cat] = net
                 return net
         return net_fn
-    
+
     def __init__(self, latent_size, hidden_size, num_input_channels):
         super(Model, self).__init__()
         self.snapping = False
@@ -72,7 +72,7 @@ class Model(nn.Module):
                 Reshape(-1, 64),
                 nn.Linear(64, latent_size)
             )
-        
+
         def make_snap_predictor():
             return nn.Sequential(
                 # 64 -> 32
@@ -90,7 +90,7 @@ class Model(nn.Module):
                 nn.Linear(64, 1),
                 nn.Sigmoid()
             )
-        
+
         def make_generator():
             return nn.Sequential(
                 nn.Linear(2*latent_size, hidden_size),
@@ -162,7 +162,7 @@ class Model(nn.Module):
             return orient
         else:
             return orient_x, y_sign_p
-        
+
 
     def snap_predict(self, walls, cat):
         return self.snap_predictor(cat)(walls)
@@ -290,6 +290,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='orient')
     parser.add_argument('--save-dir', type=str, required=True)
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6")
+    parser.add_argument('--dataset', type=str, default="grammar")
+    parser.add_argument('--external', action='store_true')
     args = parser.parse_args()
     outdir = f'./output/{args.save_dir}'
     utils.ensuredir(outdir)
@@ -365,14 +367,15 @@ if __name__ == '__main__':
             t_cat_0 = t_cat[0]
             assert((t_cat == t_cat_0).all())
             t_cat = t_cat_0.item()
-            
+
             actual_batch_size = input_img.shape[0]
 
             if use_jitter:
                 t_loc += torch.randn(actual_batch_size, 2)*jitter_stdev
 
             t_snap = should_snap(t_orient)
-            input_img, t_loc, t_orient, t_dims, t_snap = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda(), t_snap.cuda()
+            input_img, t_loc, t_orient, t_dims, t_snap = \
+                input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda(), t_snap.cuda()
             d_loc, d_orient = default_loc_orient(actual_batch_size)
             input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size)
             t_loc = d_loc.cuda()

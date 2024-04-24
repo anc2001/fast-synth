@@ -85,7 +85,7 @@ class LocDataset():
             xmin, _, ymin, _ = node["bbox_min"]
             xmax, _, ymax, _ = node["bbox_max"]
             parent_ids.append(node["id"])
-        
+
         inputs = composite.get_composite(num_extra_channels=0)
         size = inputs.shape[1]
 
@@ -98,7 +98,7 @@ class LocDataset():
                 xmin, _, ymin, _ = node["bbox_min"]
                 xmax, _, ymax, _ = node["bbox_max"]
                 centroids.append(((xmin+xmax)/2, (ymin+ymax)/2, node["category"]))
-        
+
         output = torch.zeros((64,64)).long()
 
         for (x,y,label) in centroids:
