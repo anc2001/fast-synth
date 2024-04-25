@@ -291,34 +291,57 @@ if __name__ == '__main__':
     parser.add_argument('--save-dir', type=str, required=True)
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6")
     parser.add_argument('--dataset', type=str, default="grammar")
+    parser.add_argument('--num-examples', type=int, default=10000)
     parser.add_argument('--external', action='store_true')
     args = parser.parse_args()
     outdir = f'./output/{args.save_dir}'
     utils.ensuredir(outdir)
 
     data_folder = args.data_folder
-
-    data_root_dir = utils.get_data_root_dir()
-    with open(f"{data_root_dir}/{data_folder}/final_categories_frequency", "r") as f:
-        lines = f.readlines()
-        cats = [line.split()[0] for line in lines]
-    categories = [cat for cat in cats if cat not in set(['window', 'door'])]
-    num_categories = len(categories)
-    num_input_channels = num_categories+8
-
-    nc = num_categories
-
     logfile = open(f"{outdir}/log.txt", 'w')
     def LOG(msg):
         print(msg)
         logfile.write(msg + '\n')
         logfile.flush()
 
-    dataset = LatentDataset(
-        data_folder = data_folder,
-        scene_indices = (0, dataset_size),
-        use_same_category_batches = True,
-    )
+    if args.external:
+        from src.config import data_filepath
+        from src.object.config import object_types
+
+        num_categories = len(object_types)
+        num_input_channels = num_categories + 8
+
+        num_examples = args.num_examples
+        num_train = int(0.8 * num_examples)
+        indices = np.arange(num_examples)
+        train_indices = indices[:num_train]
+        val_indices = indices[num_train:]
+        dataset = utils.get_scene_orient_dataset(data_filepath / args.dataset, train_indices)
+        valid_dataset = utils.get_scene_orient_dataset(data_filepath / args.dataset, val_indices)
+    else:
+        data_root_dir = utils.get_data_root_dir()
+        with open(f"{data_root_dir}/{data_folder}/final_categories_frequency", "r") as f:
+            lines = f.readlines()
+            cats = [line.split()[0] for line in lines]
+        categories = [cat for cat in cats if cat not in set(['window', 'door'])]
+        num_categories = len(categories)
+        num_input_channels = num_categories+8
+
+        nc = num_categories
+
+        dataset = LatentDataset(
+            data_folder = data_folder,
+            scene_indices = (0, dataset_size),
+            use_same_category_batches = True,
+        )
+
+        valid_dataset = LatentDataset(
+            data_folder = data_folder,
+            scene_indices = (dataset_size, dataset_size+160),
+            use_same_category_batches = True
+            # seed = 42
+        )
+
     # Put this here right away in case the creation of the data loader reads and
     #    caches the length of the dataset
     dataset.prepare_same_category_batches(batch_size)
@@ -331,12 +354,6 @@ if __name__ == '__main__':
         shuffle = False
     )
 
-    valid_dataset = LatentDataset(
-        data_folder = data_folder,
-        scene_indices = (dataset_size, dataset_size+160),
-        use_same_category_batches = True
-        # seed = 42
-    )
     dataset.prepare_same_category_batches(batch_size)
     valid_loader = data.DataLoader(
         valid_dataset,
@@ -361,7 +378,7 @@ if __name__ == '__main__':
     def train(e):
         dataset.prepare_same_category_batches(batch_size)
         LOG(f'========================= EPOCH {e} =========================')
-        for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
+        for i, (input_img, _, t_cat, t_loc, t_orient, _, _) in enumerate(data_loader):
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
@@ -374,10 +391,17 @@ if __name__ == '__main__':
                 t_loc += torch.randn(actual_batch_size, 2)*jitter_stdev
 
             t_snap = should_snap(t_orient)
-            input_img, t_loc, t_orient, t_dims, t_snap = \
-                input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda(), t_snap.cuda()
+            input_img, t_loc, t_orient, t_snap = \
+                input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_snap.cuda()
             d_loc, d_orient = default_loc_orient(actual_batch_size)
+            # BEGIN TO DELETE
+            # Print image before translation
+            # Image.fromarray(input_img[0].cpu().numpy())
+            # END TO DELETE
             input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size)
+            # BEGIN TO DELETE
+            # Print image after translation
+            # END TO DELETE
             t_loc = d_loc.cuda()
 
             # No GAN
@@ -390,7 +414,7 @@ if __name__ == '__main__':
             model.set_requires_grad('VAE', t_cat)
             optimizers.g_optimizer(t_cat).zero_grad()
             optimizers.e_optimizer(t_cat).zero_grad()
-            real_sdf = render_oriented_sdf((img_size, img_size), t_dims, t_loc, t_orient)
+            # real_sdf = render_oriented_sdf((img_size, img_size), t_dims, t_loc, t_orient)
             # mu, logvar = model.encode(real_sdf, input_img, t_cat)
             mu, logvar = model.encode(t_orient, t_cat)
             kld_loss = unitnormal_normal_kld(mu, logvar)
@@ -445,7 +469,7 @@ if __name__ == '__main__':
             t_cat_0 = t_cat[0]
             assert((t_cat == t_cat_0).all())
             t_cat = t_cat_0.item()
-            
+
             actual_batch_size = input_img.shape[0]
 
             if use_jitter:
@@ -460,7 +484,7 @@ if __name__ == '__main__':
             # VAE losses
             recon_loss = 0.0
             kld_loss = 0.0
-            real_sdf = render_oriented_sdf((img_size, img_size), t_dims, t_loc, t_orient)
+            # real_sdf = render_oriented_sdf((img_size, img_size), t_dims, t_loc, t_orient)
             # mu, logvar = model.encode(real_sdf, input_img, t_cat)
             mu, logvar = model.encode(t_orient, t_cat)
             kld_loss = unitnormal_normal_kld(mu, logvar)

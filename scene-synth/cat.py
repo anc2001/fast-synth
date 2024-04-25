@@ -120,7 +120,7 @@ if __name__ == '__main__':
 
     if args.external:
         from src.config import data_filepath
-        scene_dataset = utils.get_scene_dataset(data_filepath / args.dataset)
+        scene_dataset = utils.get_scene_category_dataset(data_filepath / args.dataset)
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(scene_dataset)
         train_size = int(0.8 * total_size)
