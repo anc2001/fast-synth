@@ -146,9 +146,11 @@ class Model(nn.Module):
         enc_walls = self.cond_prior(cat)(walls)
         gen_out = self.generator(cat)(torch.cat([noise, enc_walls], dim=1))
         go1, go2 = torch.split(gen_out, 1, dim=1)
-        orient_x = F.tanh(go1)
+        # orient_x = F.tanh(go1)
+        orient_x = torch.tanh(go1)
         orient_y = torch.sqrt(1.0 - orient_x * orient_x)
-        y_sign_p = F.sigmoid(go2)
+        # y_sign_p = F.sigmoid(go2)
+        y_sign_p = torch.sigmoid(go2)
         if self.testing:
             y_sign = torch.where(y_sign_p > 0.5, torch.ones_like(orient_y), -torch.ones_like(orient_y))
             orient_y *= y_sign
@@ -306,14 +308,16 @@ if __name__ == '__main__':
 
     if args.external:
         from src.config import data_filepath
-        from src.object.config import object_types
+        from src.object.config import object_types, object_types_map_reverse
 
         num_categories = len(object_types)
-        num_input_channels = num_categories + 8
+        num_input_channels = num_categories + 6
+        categories = object_types_map_reverse
 
         num_examples = args.num_examples
         num_train = int(0.8 * num_examples)
         indices = np.arange(num_examples)
+        np.random.shuffle(indices)
         train_indices = indices[:num_train]
         val_indices = indices[num_train:]
         dataset = utils.get_scene_orient_dataset(data_filepath / args.dataset, train_indices)
@@ -428,7 +432,7 @@ if __name__ == '__main__':
             real_x = t_orient[:, 0]
             real_ysign = (t_orient[:, 1] >= 0).float()
             x_recon_loss = F.l1_loss(fake_x.squeeze(), real_x)
-            y_recon_loss = F.binary_cross_entropy(fake_ysign_p, real_ysign)
+            y_recon_loss = F.binary_cross_entropy(fake_ysign_p.squeeze(), real_ysign)
             recon_loss = x_recon_loss + y_recon_loss
             #################
             vae_loss = recon_loss + kld_loss
@@ -442,7 +446,7 @@ if __name__ == '__main__':
             model.snapping = True
             optimizers.s_optimizer(t_cat).zero_grad()
             prob = model.snap_predict(input_img, t_cat)
-            s_loss = F.binary_cross_entropy(prob, t_snap)
+            s_loss = F.binary_cross_entropy(prob.squeeze(), t_snap)
             s_loss.backward()
             optimizers.s_optimizer(t_cat).step()
 
@@ -478,7 +482,7 @@ if __name__ == '__main__':
             t_snap = should_snap(t_orient)
             input_img, t_loc, t_orient, t_dims, t_snap = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda(), t_snap.cuda()
             d_loc, d_orient = default_loc_orient(actual_batch_size)
-            input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size)
+            input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size, align_corners=True)
             t_loc = d_loc.cuda()
 
             # VAE losses

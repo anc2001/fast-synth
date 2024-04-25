@@ -72,7 +72,7 @@ def get_scene_category_dataset(dataset_path: Path) -> SceneDataset:
         print("Generating category dataset")
         subscenes_meta = read_data(scenes_path.parent / 'subscenes_meta.pkl')
         generate_category_dataset(scenes, subscenes_meta, metadata_path)
-    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_category")
+    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_cat")
     return scene_dataset
 
 def get_scene_loc_dataset(dataset_path : Path) -> SceneDataset:

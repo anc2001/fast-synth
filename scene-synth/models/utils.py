@@ -109,7 +109,7 @@ def unitnormal_normal_kld(mu, logvar, size_average=True):
         output = torch.mean(output)
     return output
 
-def inverse_xform_img(img, loc, orient, output_size):
+def inverse_xform_img(img, loc, orient, output_size, align_corners=True):
     batch_size = img.shape[0]
     matrices = torch.zeros(batch_size, 2, 3).cuda()
     cos = orient[:, 0]
@@ -121,8 +121,8 @@ def inverse_xform_img(img, loc, orient, output_size):
     matrices[:, 0, 2] = loc[:, 1]
     matrices[:, 1, 2] = loc[:, 0]
     out_size = torch.Size((batch_size, img.shape[1], output_size, output_size))
-    grid = F.affine_grid(matrices, out_size)
-    return F.grid_sample(img, grid)
+    grid = F.affine_grid(matrices, out_size, align_corners=align_corners)
+    return F.grid_sample(img, grid, align_corners=align_corners)
 
 def forward_xform_img(img, loc, orient, output_size):
     # First, build the inverse rotation matrices
