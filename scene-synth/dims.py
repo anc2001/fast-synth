@@ -12,6 +12,9 @@ from models.utils import *
 from latent_dataset import LatentDataset
 import utils
 import os
+import sys
+from pathlib import Path
+from torch.utils.data import random_split
 
 """
 Module that predicts the dimension of the next object
@@ -34,14 +37,17 @@ class Model(nn.Module):
             if cat in netdict:
                 return netdict[cat]
             else:
-                net = makefn().cuda()
+                net = makefn()
+                if self.cuda:
+                    net = net.cuda()
                 netdict[cat] = net
                 return net
         return net_fn
     
-    def __init__(self, latent_size, hidden_size, num_input_channels):
+    def __init__(self, latent_size, hidden_size, num_input_channels, nocuda=False):
         super(Model, self).__init__()
         self.latent_size = latent_size
+        self.cuda = not nocuda
 
         def make_encoder():
             return nn.Sequential(
@@ -214,7 +220,6 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    img_size = 64
     latent_size = 10
     hidden_size = 40
     output_size = 2
@@ -236,19 +241,28 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='dims')
     parser.add_argument('--save-dir', type=str, required=True)
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6")
+    parser.add_argument('--dataset', type=str, default="grammar")
+    parser.add_argument('--external', action='store_true')
+    parser.add_argument('--no_cuda', action='store_true')
     args = parser.parse_args()
     outdir = f'./output/{args.save_dir}'
     utils.ensuredir(outdir)
 
-    data_folder = args.data_folder
 
-    data_root_dir = utils.get_data_root_dir()
-    with open(f"{data_root_dir}/{data_folder}/final_categories_frequency", "r") as f:
-            lines = f.readlines()
-            cats = [line.split()[0] for line in lines]
-    categories = [cat for cat in cats if cat not in set(['window', 'door'])]
-    num_categories = len(categories)
-    num_input_channels = num_categories+8
+    if args.external:
+        from src.object.config import object_types
+        num_categories = len(object_types) - 1
+        num_input_channels = num_categories + 7
+    else:
+        img_size = 64
+        data_folder = args.data_folder
+        data_root_dir = utils.get_data_root_dir()
+        with open(f"{data_root_dir}/{data_folder}/final_categories_frequency", "r") as f:
+                lines = f.readlines()
+                cats = [line.split()[0] for line in lines]
+        categories = [cat for cat in cats if cat not in set(['window', 'door'])]
+        num_categories = len(categories)
+        num_input_channels = num_categories+8
 
     nc = num_categories
 
@@ -258,52 +272,83 @@ if __name__ == '__main__':
         logfile.write(msg + '\n')
         logfile.flush()
 
-    dataset = LatentDataset(
-        data_folder = data_folder,
-        scene_indices = (0, dataset_size),
-        use_same_category_batches = True,
-    )
-    # Put this here right away in case the creation of the data loader reads and
-    #    caches the length of the dataset
-    dataset.prepare_same_category_batches(batch_size)
-    # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
-    #    only one category in it
-    data_loader = data.DataLoader(
-        dataset,
-        batch_size = batch_size,
-        num_workers = 6,
-        shuffle = False
-    )
-
-    valid_dataset = LatentDataset(
-        data_folder = data_folder,
-        scene_indices = (dataset_size, dataset_size+160),
-        use_same_category_batches = True
-        # seed = 42
-    )
-    dataset.prepare_same_category_batches(batch_size)
-    valid_loader = data.DataLoader(
-        valid_dataset,
-        batch_size = batch_size,
-        num_workers = 6,
-        shuffle = False
-    )
-
-
-    test_dataset = valid_dataset
-    test_loader = data.DataLoader(
-        valid_dataset,
-        batch_size = batch_size,
-        num_workers = 1,
-        shuffle = False
-    )
-
-    model = Model(latent_size, hidden_size, num_input_channels).cuda()
+    LOG('Building model...')
+    model = Model(latent_size, hidden_size, num_input_channels, nocuda=args.no_cuda)
+    if not args.no_cuda:
+        model = model.cuda()
     model.train()
     optimizers = Optimizers(model=model, lr=0.0005)
 
-    def train(e):
+    if args.external:
+        from src.config import data_filepath, grid_size
+        scene_dataset = utils.get_scene_dataset(data_filepath / args.dataset, "fastsynth_dims")
+        total_size = len(scene_dataset)
+        train_size = int(0.8 * total_size)
+        validation_size = total_size - train_size
+        # TODO ask kai... should img_size be equal to grid size
+        #img_size = grid_size
+
+        # create stuff for prepare_same_category_batches()
+        cats_seen = []
+        same_category_batches = []
+
+        # Split the dataset
+        dataset, validation_dataset = random_split(scene_dataset, [train_size, validation_size])
+
+        data_loader = data.DataLoader(
+            dataset,
+            batch_size = batch_size,
+            num_workers = 6,
+            shuffle = False
+        )
+    else:
+        LOG("Buliding dataset...")
+        dataset = LatentDataset(
+            data_folder = data_folder,
+            scene_indices = (0, dataset_size),
+            use_same_category_batches = True,
+        )
+        # Put this here right away in case the creation of the data loader reads and
+        #    caches the length of the dataset
         dataset.prepare_same_category_batches(batch_size)
+        # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
+        #    only one category in it
+        data_loader = data.DataLoader(
+            dataset,
+            batch_size = batch_size,
+            num_workers = 6,
+            shuffle = False
+        )
+
+        valid_dataset = LatentDataset(
+            data_folder = data_folder,
+            scene_indices = (dataset_size, dataset_size+160),
+            use_same_category_batches = True
+            # seed = 42
+        )
+        dataset.prepare_same_category_batches(batch_size)
+        valid_loader = data.DataLoader(
+            valid_dataset,
+            batch_size = batch_size,
+            num_workers = 6,
+            shuffle = False
+        )
+
+
+        test_dataset = valid_dataset
+        test_loader = data.DataLoader(
+            valid_dataset,
+            batch_size = batch_size,
+            num_workers = 1,
+            shuffle = False
+        )
+
+    def train(e):
+        if args.external:
+            # TODO implement prepare_same_category_batches()?
+            pass
+        else:
+            dataset.prepare_same_category_batches(batch_size)
         LOG(f'========================= EPOCH {e} =========================')
         for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
             t_cat = torch.squeeze(t_cat)
@@ -319,9 +364,10 @@ if __name__ == '__main__':
                 shsn = should_snap(t_orient)
                 t_orient = torch.where(shsn == torch.zeros_like(shsn), F.normalize(t_orient + torch.randn(actual_batch_size, 2)*jitter_orient_stdev), t_orient)
 
-            input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
-            input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size)
-            t_loc, t_orient = default_loc_orient(actual_batch_size)
+            if not args.no_cuda:
+                input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
+            input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda)
+            t_loc, t_orient = default_loc_orient(actual_batch_size, no_cuda=args.no_cuda)
 
             real_sdf = render_obb_sdf((img_size, img_size), t_dims, t_loc, t_orient)
 
@@ -330,7 +376,8 @@ if __name__ == '__main__':
             model.set_requires_grad('D', t_cat)
             optimizers.d_optimizer(t_cat).zero_grad()
             noise = torch.randn(actual_batch_size, latent_size)
-            noise = noise.cuda()
+            if not args.no_cuda:
+                noise = noise.cuda()
             fake_dims = model.generate(noise, input_img, t_cat).detach()
             d_out_fake = model.discriminate(render_obb_sdf((img_size, img_size), fake_dims, t_loc, t_orient), input_img, t_cat)
             d_out_real = model.discriminate(real_sdf, input_img, t_cat)
@@ -348,7 +395,8 @@ if __name__ == '__main__':
             model.set_requires_grad('G', t_cat)
             optimizers.g_optimizer(t_cat).zero_grad()
             noise = torch.randn(actual_batch_size, latent_size)
-            noise = noise.cuda()
+            if not args.no_cuda:
+                noise = noise.cuda()
             fake_dims = model.generate(noise, input_img, t_cat)
             d_out_fake = model.discriminate(render_obb_sdf((img_size, img_size), fake_dims, t_loc, t_orient), input_img, t_cat)
             g_loss = torch.mean(-torch.log(d_out_fake))
@@ -405,9 +453,10 @@ if __name__ == '__main__':
                 shsn = should_snap(t_orient)
                 t_orient = torch.where(shsn == torch.zeros_like(shsn), F.normalize(t_orient + torch.randn(actual_batch_size, 2)*jitter_orient_stdev), t_orient)
 
-            input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
-            input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size)
-            t_loc, t_orient = default_loc_orient(actual_batch_size)
+            if not args.no_cuda:
+                input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
+            input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda)
+            t_loc, t_orient = default_loc_orient(actual_batch_size, no_cuda=args.no_cuda)
 
             real_sdf = render_obb_sdf((img_size, img_size), t_dims, t_loc, t_orient)
 

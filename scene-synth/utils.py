@@ -4,11 +4,11 @@ import os
 import os.path
 from pathlib import Path
 import pickle
-import torch
 import torch.nn.functional as F
 from contextlib import contextmanager
 from scipy.ndimage import distance_transform_edt
 import sys
+import random
 
 # Get the absolute path to the root of the project by navigating up two levels from this file
 project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -75,6 +75,19 @@ def get_scene_dataset(dataset_path: Path, type: str) -> SceneDataset:
     scene_dataset = SceneDataset(scenes_path, metadata_path, type)
     return scene_dataset
 
+# ported from latent_dataset.py in SceneSynth. dims.py requires this each epoch
+def prepare_same_category_batches(dataset: SceneDataset, cats_seen, batch_size: int):
+    # Build a random list of category indices (grouped by batch_size)
+    # This requires than length of dataset is a multiple of batch_size
+    assert(len(dataset) % batch_size == 0)
+    num_batches = len(dataset) // batch_size
+    same_category_batch_indices = []
+    for i in range(num_batches):
+        # cat_index = random.randint(0, self.n_categories-1)
+        cat_index = random.choice(cats_seen)
+        for j in range(batch_size):
+            same_category_batch_indices.append(cat_index)
+    return same_category_batch_indices
 
 def memoize(func):
     """

@@ -85,8 +85,6 @@ class NextCategory(nn.Module):
 # ---------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    # TODO refactor to be an arg
-    #scenesynth_loc = Path.cwd().parent / "fastsynth_formatted_dataset.json"
     scenesynth_loc = Path(args.ss_loc)
     if not scenesynth_loc.exists():
         print("ERROR: scenesynth path must exist! Specify with --ss_loc")
