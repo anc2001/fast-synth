@@ -38,16 +38,16 @@ class Model(nn.Module):
                 return netdict[cat]
             else:
                 net = makefn()
-                if self.cuda:
+                if self.is_cuda:
                     net = net.cuda()
                 netdict[cat] = net
                 return net
         return net_fn
-    
+
     def __init__(self, latent_size, hidden_size, num_input_channels, nocuda=False):
         super(Model, self).__init__()
         self.latent_size = latent_size
-        self.cuda = not nocuda
+        self.is_cuda = not nocuda
 
         def make_encoder():
             return nn.Sequential(
@@ -82,7 +82,7 @@ class Model(nn.Module):
                 Reshape(-1, 64),
                 nn.Linear(64, latent_size)
             )
-        
+
         def make_generator():
             return nn.Sequential(
                 nn.Linear(2*latent_size, hidden_size),
@@ -242,6 +242,7 @@ if __name__ == '__main__':
     parser.add_argument('--save-dir', type=str, required=True)
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6")
     parser.add_argument('--dataset', type=str, default="grammar")
+    parser.add_argument('--num-examples', type=int, default=10000)
     parser.add_argument('--external', action='store_true')
     parser.add_argument('--no_cuda', action='store_true')
     args = parser.parse_args()
@@ -250,9 +251,12 @@ if __name__ == '__main__':
 
 
     if args.external:
-        from src.object.config import object_types
+        from src.object.config import object_types,  object_types_map_reverse
+        from src.config import grid_size
         num_categories = len(object_types) - 1
         num_input_channels = num_categories + 7
+        img_size = grid_size
+        categories = object_types_map_reverse
     else:
         img_size = 64
         data_folder = args.data_folder
@@ -280,27 +284,18 @@ if __name__ == '__main__':
     optimizers = Optimizers(model=model, lr=0.0005)
 
     if args.external:
-        from src.config import data_filepath, grid_size
-        scene_dataset = utils.get_scene_dataset(data_filepath / args.dataset, "fastsynth_dims")
-        total_size = len(scene_dataset)
-        train_size = int(0.8 * total_size)
-        validation_size = total_size - train_size
-        # TODO ask kai... should img_size be equal to grid size
-        #img_size = grid_size
+        from src.config import data_filepath
 
-        # create stuff for prepare_same_category_batches()
-        cats_seen = []
-        same_category_batches = []
-
-        # Split the dataset
-        dataset, validation_dataset = random_split(scene_dataset, [train_size, validation_size])
-
-        data_loader = data.DataLoader(
-            dataset,
-            batch_size = batch_size,
-            num_workers = 6,
-            shuffle = False
-        )
+        num_examples = args.num_examples
+        num_train = int(0.8 * num_examples)
+        indices = np.arange(num_examples)
+        np.random.shuffle(indices)
+        train_indices = indices[:num_train]
+        val_indices = indices[num_train:]
+        dataset = utils.get_scene_orient_dims_dataset(data_filepath / args.dataset, train_indices)
+        dataset.prepare_same_category_batches(batch_size)
+        valid_dataset = utils.get_scene_orient_dims_dataset(data_filepath / args.dataset, val_indices)
+        valid_dataset.prepare_same_category_batches(batch_size)
     else:
         LOG("Buliding dataset...")
         dataset = LatentDataset(
@@ -311,14 +306,6 @@ if __name__ == '__main__':
         # Put this here right away in case the creation of the data loader reads and
         #    caches the length of the dataset
         dataset.prepare_same_category_batches(batch_size)
-        # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
-        #    only one category in it
-        data_loader = data.DataLoader(
-            dataset,
-            batch_size = batch_size,
-            num_workers = 6,
-            shuffle = False
-        )
 
         valid_dataset = LatentDataset(
             data_folder = data_folder,
@@ -326,29 +313,34 @@ if __name__ == '__main__':
             use_same_category_batches = True
             # seed = 42
         )
-        dataset.prepare_same_category_batches(batch_size)
-        valid_loader = data.DataLoader(
-            valid_dataset,
-            batch_size = batch_size,
-            num_workers = 6,
-            shuffle = False
-        )
+        valid_dataset.prepare_same_category_batches(batch_size)
 
+    # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
+    #    only one category in it
+    data_loader = data.DataLoader(
+        dataset,
+        batch_size = batch_size,
+        num_workers = 6,
+        shuffle = False
+    )
 
-        test_dataset = valid_dataset
-        test_loader = data.DataLoader(
-            valid_dataset,
-            batch_size = batch_size,
-            num_workers = 1,
-            shuffle = False
-        )
+    valid_loader = data.DataLoader(
+        valid_dataset,
+        batch_size = batch_size,
+        num_workers = 6,
+        shuffle = False
+    )
+
+    test_dataset = valid_dataset
+    test_loader = data.DataLoader(
+        valid_dataset,
+        batch_size = batch_size,
+        num_workers = 1,
+        shuffle = False
+    )
 
     def train(e):
-        if args.external:
-            # TODO implement prepare_same_category_batches()?
-            pass
-        else:
-            dataset.prepare_same_category_batches(batch_size)
+        dataset.prepare_same_category_batches(batch_size)
         LOG(f'========================= EPOCH {e} =========================')
         for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
             t_cat = torch.squeeze(t_cat)
@@ -356,7 +348,7 @@ if __name__ == '__main__':
             t_cat_0 = t_cat[0]
             assert((t_cat == t_cat_0).all())
             t_cat = t_cat_0.item()
-            
+
             actual_batch_size = input_img.shape[0]
 
             if use_jitter:

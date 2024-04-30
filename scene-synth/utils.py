@@ -81,10 +81,10 @@ def get_scene_loc_dataset(dataset_path : Path) -> SceneDataset:
     scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_loc")
     return scene_dataset
 
-def get_scene_orient_dataset(dataset_path : Path, indices) -> SceneDataset:
+def get_scene_orient_dims_dataset(dataset_path : Path, indices) -> SceneDataset:
     scenes_path = dataset_path / "formatted_data" / "parse.pkl"
     metadata_path = dataset_path / "formatted_data" / "subscenes_meta.pkl"
-    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_orient", indices = indices)
+    scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_orient_dims", indices = indices)
     return scene_dataset
 
 def memoize(func):

@@ -24,10 +24,10 @@ class Reshape(nn.Module):
 #    up to work in that coordinate system. In particular, this means that locations are
 #    rescaled from [-1, 1] to [0, 1]
 def render_obb_sdf(img_size, box_dims, loc, orient):
-    print(img_size)
-    print(box_dims)
-    print(loc)
-    print(orient)
+    # print(img_size)
+    # print(box_dims)
+    # print(loc)
+    # print(orient)
     batch_size = loc.shape[0]
 
     # I don't know why, but the orient dims need to be reversed...

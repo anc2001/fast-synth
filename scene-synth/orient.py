@@ -310,8 +310,8 @@ if __name__ == '__main__':
         from src.config import data_filepath
         from src.object.config import object_types, object_types_map_reverse
 
-        num_categories = len(object_types)
-        num_input_channels = num_categories + 6
+        num_categories = len(object_types) - 1
+        num_input_channels = num_categories + 7
         categories = object_types_map_reverse
 
         num_examples = args.num_examples
@@ -320,8 +320,8 @@ if __name__ == '__main__':
         np.random.shuffle(indices)
         train_indices = indices[:num_train]
         val_indices = indices[num_train:]
-        dataset = utils.get_scene_orient_dataset(data_filepath / args.dataset, train_indices)
-        valid_dataset = utils.get_scene_orient_dataset(data_filepath / args.dataset, val_indices)
+        dataset = utils.get_scene_orient_dims_dataset(data_filepath / args.dataset, train_indices)
+        valid_dataset = utils.get_scene_orient_dims_dataset(data_filepath / args.dataset, val_indices)
     else:
         data_root_dir = utils.get_data_root_dir()
         with open(f"{data_root_dir}/{data_folder}/final_categories_frequency", "r") as f:
@@ -358,7 +358,7 @@ if __name__ == '__main__':
         shuffle = False
     )
 
-    dataset.prepare_same_category_batches(batch_size)
+    valid_dataset.prepare_same_category_batches(batch_size)
     valid_loader = data.DataLoader(
         valid_dataset,
         batch_size = batch_size,
@@ -382,7 +382,7 @@ if __name__ == '__main__':
     def train(e):
         dataset.prepare_same_category_batches(batch_size)
         LOG(f'========================= EPOCH {e} =========================')
-        for i, (input_img, _, t_cat, t_loc, t_orient, _, _) in enumerate(data_loader):
+        for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
