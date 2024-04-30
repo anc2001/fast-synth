@@ -1,5 +1,5 @@
 import gzip
-import math
+import torch
 import os
 import os.path
 from pathlib import Path
@@ -8,7 +8,8 @@ import torch.nn.functional as F
 from contextlib import contextmanager
 from scipy.ndimage import distance_transform_edt
 import sys
-import random
+import numpy as np
+import matplotlib.pyplot as plt
 
 # Get the absolute path to the root of the project by navigating up two levels from this file
 project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -86,6 +87,40 @@ def get_scene_orient_dims_dataset(dataset_path : Path, indices) -> SceneDataset:
     metadata_path = dataset_path / "formatted_data" / "subscenes_meta.pkl"
     scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_orient_dims", indices = indices)
     return scene_dataset
+
+def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
+    # Ensure input is a PyTorch tensor
+    if not isinstance(input_img, torch.Tensor):
+        raise TypeError("Input must be a PyTorch tensor.")
+
+    # Validate image_index
+    if not (0 <= img_index < input_img.shape[0]):
+        raise IndexError("image_index out of range.")
+
+    # Assuming input_img has shape [batch_size, channels, height, width]
+    _, channels, height, width = input_img.shape
+    
+    # Define colors for categories (assuming up to 20 categories)
+    colors = plt.cm.get_cmap('tab20', 10)  # Modify as necessary based on the number of categories
+
+    # Extract room mask and wall mask
+    room_mask = input_img[img_index, 1]
+    wall_mask = input_img[img_index, 2]
+
+    # Initialize an RGB image
+    rgb_image = np.zeros((height, width, 3))
+    rgb_image[room_mask == 1] = [1.0, 1.0, 1.0]  # White for room
+    rgb_image[wall_mask == 0.5] = [0.0, 0.0, 0.0]  # Black for walls
+
+    # Handle category channels
+    num_categories = channels - 6
+    for i in range(num_categories):
+        category_mask = input_img[img_index, 6 + i] > 0
+        color = colors(i)[:3]  # RGB components of the color
+        rgb_image[category_mask] = color
+
+    # Convert tensor to numpy for saving with matplotlib
+    plt.imsave(f'{save_path}.png', rgb_image)
 
 def memoize(func):
     """
