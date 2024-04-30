@@ -188,7 +188,7 @@ if __name__ == '__main__':
     def train():
         global num_seen, current_epoch, loss_running_avg
 
-        for batch_idx, (input_img, t_cat, catcount) in enumerate(tqdm(train_loader)):
+        for batch_idx, (input_img, t_cat, catcount) in enumerate(train_loader):
 
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
