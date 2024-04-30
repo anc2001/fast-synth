@@ -24,6 +24,10 @@ class Reshape(nn.Module):
 #    up to work in that coordinate system. In particular, this means that locations are
 #    rescaled from [-1, 1] to [0, 1]
 def render_obb_sdf(img_size, box_dims, loc, orient):
+    print(img_size)
+    print(box_dims)
+    print(loc)
+    print(orient)
     batch_size = loc.shape[0]
 
     # I don't know why, but the orient dims need to be reversed...
@@ -109,9 +113,11 @@ def unitnormal_normal_kld(mu, logvar, size_average=True):
         output = torch.mean(output)
     return output
 
-def inverse_xform_img(img, loc, orient, output_size, align_corners=True):
+def inverse_xform_img(img, loc, orient, output_size, align_corners=True, no_cuda=False):
     batch_size = img.shape[0]
-    matrices = torch.zeros(batch_size, 2, 3).cuda()
+    matrices = torch.zeros(batch_size, 2, 3)
+    if not no_cuda:
+        matrices = matrices.cuda()
     cos = orient[:, 0]
     sin = orient[:, 1]
     matrices[:, 0, 0] = cos
@@ -150,9 +156,11 @@ def forward_xform_img(img, loc, orient, output_size):
     grid = F.affine_grid(inv_matrices, out_size)
     return F.grid_sample(img, grid)
 
-def default_loc_orient(batch_size):
-    loc = torch.zeros(batch_size, 2).cuda()
-    orient = torch.stack([torch.Tensor([math.cos(0), math.sin(0)]) for i in range(batch_size)], dim=0).cuda()
+def default_loc_orient(batch_size, no_cuda=False):
+    loc = torch.zeros(batch_size, 2)
+    orient = torch.stack([torch.Tensor([math.cos(0), math.sin(0)]) for i in range(batch_size)], dim=0)
+    if not no_cuda:
+        return loc.cuda(), orient.cuda()
     return loc, orient
 
 class DownConvBlock(nn.Module):

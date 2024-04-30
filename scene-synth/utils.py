@@ -4,11 +4,11 @@ import os
 import os.path
 from pathlib import Path
 import pickle
-import torch
 import torch.nn.functional as F
 from contextlib import contextmanager
 from scipy.ndimage import distance_transform_edt
 import sys
+import random
 
 # Get the absolute path to the root of the project by navigating up two levels from this file
 project_root = Path(__file__).resolve().parent.parent.parent.parent
