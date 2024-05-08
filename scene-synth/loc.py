@@ -167,7 +167,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Location Training with Auxillary Tasks')
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
     parser.add_argument('--num-workers', type=int, default=6, metavar='N')
-    parser.add_argument('--last-epoch', type=int, default=-1, metavar='N')
+    parser.add_argument('--last-epoch', type=int, default=-10, metavar='N')
     parser.add_argument('--train-size', type=int, default=6000, metavar='N')
     parser.add_argument('--save-dir', type=str, default="loc_test", metavar='S')
     parser.add_argument('--ablation', type=str, default=None, metavar='S')

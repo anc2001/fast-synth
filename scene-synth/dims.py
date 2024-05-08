@@ -437,7 +437,7 @@ if __name__ == '__main__':
             t_cat_0 = t_cat[0]
             assert((t_cat == t_cat_0).all())
             t_cat = t_cat_0.item()
-            
+
             actual_batch_size = input_img.shape[0]
 
             if use_jitter:

@@ -88,7 +88,7 @@ def get_scene_orient_dims_dataset(dataset_path : Path, indices) -> SceneDataset:
     scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_orient_dims", indices = indices)
     return scene_dataset
 
-def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
+def save_input_img_as_png(input_img, img_index=0, save_path="output_img", output_mask = None):
     # Ensure input is a PyTorch tensor
     if not isinstance(input_img, torch.Tensor):
         raise TypeError("Input must be a PyTorch tensor.")
@@ -99,7 +99,7 @@ def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
 
     # Assuming input_img has shape [batch_size, channels, height, width]
     _, channels, height, width = input_img.shape
-    
+
     # Define colors for categories (assuming up to 20 categories)
     colors = plt.cm.get_cmap('tab20', 10)  # Modify as necessary based on the number of categories
 
@@ -119,7 +119,11 @@ def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
         color = colors(i)[:3]  # RGB components of the color
         rgb_image[category_mask] = color
 
+    if output_mask is not None:
+        rgb_image[output_mask[img_index]] = [1.0, 0.0, 0.0]
     # Convert tensor to numpy for saving with matplotlib
+    # Mark the center of the image for debugging
+    rgb_image[128, 128, :] = [0.0, 1.0, 0.0]
     plt.imsave(f'{save_path}.png', rgb_image)
 
 def memoize(func):

@@ -18,7 +18,7 @@ Module that predicts the orientation of the next object
 """
 
 # ---------------------------------------------------------------------------------------
-img_size = 64
+img_size = 256
 latent_size = 10
 hidden_size = 40
 output_size = 2
@@ -270,7 +270,7 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    img_size = 64
+    img_size = 256
     latent_size = 10
     hidden_size = 40
     output_size = 2
@@ -398,14 +398,8 @@ if __name__ == '__main__':
             input_img, t_loc, t_orient, t_snap = \
                 input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_snap.cuda()
             d_loc, d_orient = default_loc_orient(actual_batch_size)
-            # BEGIN TO DELETE
-            # Print image before translation
-            # Image.fromarray(input_img[0].cpu().numpy())
-            # END TO DELETE
+
             input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size)
-            # BEGIN TO DELETE
-            # Print image after translation
-            # END TO DELETE
             t_loc = d_loc.cuda()
 
             # No GAN
