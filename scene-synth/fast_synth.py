@@ -12,6 +12,7 @@ from torchvision import datasets, transforms
 from models import *
 from torch.autograd import Variable
 from PIL import Image
+from pathlib import Path
 import copy
 from model_prior import *
 from support_prior import *
@@ -25,23 +26,31 @@ from math_utils.OBB import OBB
 from math_utils import Transform
 from filters.global_category_filter import *
 
-model_root_dir = '.'
+# get bearings within project dir structure
+file_dir = Path(os.path.dirname(os.path.realpath(__file__)))
+proj_root_dir = file_dir.parent.parent.parent
+assert proj_root_dir.name == 'SceneSynth'
 
-model_dir = "train"
+model_root_dir = proj_root_dir / 'data' / 'fastsynth_savedir'
 
-model_dir = f'{model_root_dir}/{model_dir}'
+assert model_root_dir.exists
 
-cat_dir = f"{model_dir}/bedroom/nextcat_30.pt"
+model_dir = model_root_dir / 'train'
+utils.ensuredir(model_dir)
 
-loc_dir = f"{model_dir}/bedroom/location_150.pt"
+cat_dir = model_root_dir / 'nextcat_25.pt'
 
-orient_dir = f"{model_dir}/bedroom/orient_500.pt"
+loc_dir = model_root_dir / 'location_14.pt'
 
-dims_dir = f"{model_dir}/bedroom/dims_200.pt"
+orient_dir = model_root_dir / 'model_orient_115.pt'
+
+dims_dir = model_root_dir / 'model_dims_25.pt'
 
 data_dir = "bedroom_6x6"
 
-save_dir = "release_test"
+save_dir = model_root_dir / "release_test"
+utils.ensuredir(save_dir)
+
 seed = 60
 temperature_pixel = 0.8
 temperature_cat = 1
@@ -888,9 +897,7 @@ class SynthNode():
 
 
 if __name__ == '__main__':
-    utils.ensuredir(save_dir)
     os.system(f'rm -f {save_dir}/*')
-
     run_full_synth()
     #run_scene_completion()
     #run_object_suggestion()
