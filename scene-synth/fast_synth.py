@@ -169,8 +169,9 @@ class SceneSynth():
         #Misc Handling
         self.pgen = ProjectionGenerator()
 
-        self.possible_models = self._load_possible_models()
-        self.model_set_list = self._load_model_set_list()
+        # TODO GET THESE WORKING AND UNCOMMENT (OR DELETE IF UNNECESSARY)
+        #self.possible_models = self._load_possible_models()
+        #self.model_set_list = self._load_model_set_list()
         
         #Loads trained models and build up NNs
         self.model_cat = self._load_category_model()
@@ -192,20 +193,28 @@ class SceneSynth():
         self.object_collection = ObjectCollection()
 
     
-    def _load_category_map(self):
-        with open(f"{self.data_dir}/final_categories_frequency", "r") as f:
-            lines = f.readlines()
-        cats = [line.split()[0] for line in lines]
-        categories = [cat for cat in cats if cat not in set(['window', 'door'])]
-        cat_to_index = {categories[i]:i for i in range(len(categories))}
+    def _load_category_map(self, use_fcf=False):
+        if use_fcf:
+            with open(f"{self.data_dir}/final_categories_frequency", "r") as f:
+                lines = f.readlines()
+            cats = [line.split()[0] for line in lines]
+            categories = [cat for cat in cats if cat not in set(['window', 'door'])]
+        else:
+            from src.object.config import object_types
+            categories = object_types
 
+        cat_to_index = {categories[i]:i for i in range(len(categories))}
         return categories, cat_to_index
 
-    def _load_category_model(self, cat_dir=cat_dir):
-        model_cat = CategoryModel(self.num_categories+8, self.num_categories, 200)
-        model_cat.load_state_dict(torch.load(cat_dir))
+    def _load_category_model(self, cat_dir=cat_dir, num_cats_additional=6):
+        model_cat = CategoryModel(self.num_categories+num_cats_additional, self.num_categories, 200)
+        if not torch.cuda.is_available():
+            model_cat.load_state_dict(torch.load(cat_dir, map_location=torch.device('cpu')))
+        else:
+            model_cat.load_state_dict(torch.load(cat_dir))
         model_cat.eval()
-        model_cat.cuda()
+        if torch.cuda.is_available():
+            model_cat.cuda()
 
         return model_cat
     
