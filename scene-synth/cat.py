@@ -113,8 +113,8 @@ if __name__ == '__main__':
 
     LOG(f'Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim')
     model = NextCategory(num_input_channels, num_categories, latent_dim)
-    # uncomment if computer has graphics card
-    model = model.cuda()
+    if torch.cuda.is_available():
+        model = model.cuda()
 
     LOG('Building datasets...')
 
@@ -193,8 +193,8 @@ if __name__ == '__main__':
             # Get rid of singleton dimesion in t_cat (NLLLoss complains about this)
             t_cat = torch.squeeze(t_cat)
 
-            # uncomment if graphics card
-            input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+            if torch.cuda.is_available():
+                input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
 
             optimizer.zero_grad()
             logits = model(input_img, catcount)
@@ -233,7 +233,8 @@ if __name__ == '__main__':
             t_cat = torch.squeeze(t_cat)
 
             # uncomment if graphics card
-            input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+            if torch.cuda.is_available():
+                input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
 
             with torch.no_grad():
                 logits = model(input_img, catcount)
@@ -247,7 +248,9 @@ if __name__ == '__main__':
 
             lsorted, lsorted_idx = torch.sort(logits, dim=-1, descending=True)
             lsorted_idx_top5 = lsorted_idx[:, 0:5]
-            num_correct = torch.zeros(input_img.shape[0]).cuda()
+            num_correct = torch.zeros(input_img.shape[0])
+            if torch.cuda.is_available():
+                num_correct = num_correct.cuda()
             for i in range(0, 5):
                 correct = lsorted_idx_top5[0:, i] == t_cat
                 num_correct = torch.max(num_correct, correct.float())
