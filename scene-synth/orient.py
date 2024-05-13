@@ -296,11 +296,12 @@ if __name__ == '__main__':
     parser.add_argument('--num-examples', type=int, default=10000)
     parser.add_argument('--external', action='store_true')
     args = parser.parse_args()
-    outdir = f'./output/{args.save_dir}'
+    # outdir = f'./output/{args.save_dir}'
+    outdir = args.save_dir
     utils.ensuredir(outdir)
 
     data_folder = args.data_folder
-    logfile = open(f"{outdir}/log.txt", 'w')
+    logfile = open(f"{outdir}/log_orient.txt", 'w')
     def LOG(msg):
         print(msg)
         logfile.write(msg + '\n')
@@ -383,6 +384,10 @@ if __name__ == '__main__':
         dataset.prepare_same_category_batches(batch_size)
         LOG(f'========================= EPOCH {e} =========================')
         for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
+            input_img = input_img.float()
+            t_loc = t_loc.float()
+            t_orient = t_orient.float()
+
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
@@ -399,7 +404,7 @@ if __name__ == '__main__':
                 input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_snap.cuda()
             d_loc, d_orient = default_loc_orient(actual_batch_size)
 
-            input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size)
+            input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size, align_corners=True)
             t_loc = d_loc.cuda()
 
             # No GAN
@@ -449,8 +454,8 @@ if __name__ == '__main__':
                 LOG(f'Batch {i}: cat: {catname} | D: {d_loss:4.4} | G: {g_loss:4.4} | Recon: {recon_loss:4.4} | KLD: {kld_loss:4.4} | Snap: {s_loss:4.4}')
         if e % save_every == 0:
             validate()
-            model.save(f'{outdir}/model_{e}.pt')
-            optimizers.save(f'{outdir}/opt_{e}.pt')
+            model.save(f'{outdir}/model_orient_{e}.pt')
+            optimizers.save(f'{outdir}/opt_orient_{e}.pt')
 
     def validate():
         LOG('Validating')
@@ -462,6 +467,10 @@ if __name__ == '__main__':
 
         valid_dataset.prepare_same_category_batches(batch_size)
         for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(valid_loader):
+            input_img = input_img.float()
+            t_loc = t_loc.float()
+            t_orient = t_orient.float()
+
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
@@ -474,7 +483,9 @@ if __name__ == '__main__':
                 t_loc += torch.randn(actual_batch_size, 2)*jitter_stdev
 
             t_snap = should_snap(t_orient)
-            input_img, t_loc, t_orient, t_dims, t_snap = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda(), t_snap.cuda()
+            input_img, t_loc, t_orient, t_snap = \
+                input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_snap.cuda()
+            # input_img, t_loc, t_orient, t_dims, t_snap = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda(), t_snap.cuda()
             d_loc, d_orient = default_loc_orient(actual_batch_size)
             input_img = inverse_xform_img(input_img, t_loc, d_orient.cuda(), img_size, align_corners=True)
             t_loc = d_loc.cuda()
@@ -496,14 +507,14 @@ if __name__ == '__main__':
             real_x = t_orient[:, 0]
             real_ysign = (t_orient[:, 1] >= 0).float()
             x_recon_loss = F.l1_loss(fake_x.squeeze(), real_x)
-            y_recon_loss = F.binary_cross_entropy(fake_ysign_p, real_ysign)
+            y_recon_loss = F.binary_cross_entropy(fake_ysign_p.squeeze(), real_ysign)
             recon_loss = x_recon_loss + y_recon_loss
             #################
 
             # Snap predictor loss
             s_loss = 0.0
             prob = model.snap_predict(input_img, t_cat)
-            s_loss = F.binary_cross_entropy(prob, t_snap)
+            s_loss = F.binary_cross_entropy(prob.squeeze(), t_snap)
 
             total_recon_loss += recon_loss
             total_kl_loss += kld_loss

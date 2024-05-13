@@ -115,7 +115,7 @@ def unitnormal_normal_kld(mu, logvar, size_average=True):
 
 def inverse_xform_img(img, loc, orient, output_size, align_corners=True, no_cuda=False):
     batch_size = img.shape[0]
-    matrices = torch.zeros(batch_size, 2, 3)
+    matrices = torch.zeros(batch_size, 2, 3, dtype = img.dtype)
     if not no_cuda:
         matrices = matrices.cuda()
     cos = orient[:, 0]

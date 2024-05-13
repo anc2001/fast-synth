@@ -223,7 +223,7 @@ if __name__ == '__main__':
     latent_size = 10
     hidden_size = 40
     output_size = 2
-    batch_size = 8
+    batch_size = 64
     batches_per_epoch = 625
     dataset_size = batch_size * batches_per_epoch
     log_every = 50
@@ -246,7 +246,8 @@ if __name__ == '__main__':
     parser.add_argument('--external', action='store_true')
     parser.add_argument('--no_cuda', action='store_true')
     args = parser.parse_args()
-    outdir = f'./output/{args.save_dir}'
+    # outdir = f'./output/{args.save_dir}'
+    outdir = args.save_dir
     utils.ensuredir(outdir)
 
 
@@ -270,7 +271,7 @@ if __name__ == '__main__':
 
     nc = num_categories
 
-    logfile = open(f"{outdir}/log.txt", 'w')
+    logfile = open(f"{outdir}/log_dims.txt", 'w')
     def LOG(msg):
         print(msg)
         logfile.write(msg + '\n')
@@ -343,6 +344,11 @@ if __name__ == '__main__':
         dataset.prepare_same_category_batches(batch_size)
         LOG(f'========================= EPOCH {e} =========================')
         for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
+            input_img = input_img.float()
+            t_loc = t_loc.float()
+            t_orient = t_orient.float()
+            t_dims = t_dims.float()
+
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
@@ -419,9 +425,9 @@ if __name__ == '__main__':
                 catname = categories[t_cat]
                 LOG(f'Batch {i}: cat: {catname} | D: {d_loss:4.4} | G: {g_loss:4.4} | Recon: {recon_loss:4.4} | KLD: {kld_loss:4.4}')
         if e % save_every == 0:
-            validate()
-            model.save(f'{outdir}/model_{e}.pt')
-            optimizers.save(f'{outdir}/opt_{e}.pt')
+            # validate()
+            model.save(f'{outdir}/model_dims_{e}.pt')
+            optimizers.save(f'{outdir}/opt_dims_{e}.pt')
 
     def validate():
         LOG('Validating')
@@ -432,6 +438,11 @@ if __name__ == '__main__':
 
         valid_dataset.prepare_same_category_batches(batch_size)
         for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(valid_loader):
+            input_img = input_img.float()
+            t_loc = t_loc.float()
+            t_orient = t_orient.float()
+            t_dims = t_dims.float()
+
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
@@ -447,6 +458,7 @@ if __name__ == '__main__':
 
             if not args.no_cuda:
                 input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
+
             input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda)
             t_loc, t_orient = default_loc_orient(actual_batch_size, no_cuda=args.no_cuda)
 
