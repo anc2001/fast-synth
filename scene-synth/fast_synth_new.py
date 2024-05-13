@@ -38,6 +38,7 @@ def sample_orientation(orient_model, input_img, category):
 def sample_dimensions(dims_model, input_img, category):
     """
     TODO  - reference fast_synth.py line 526
+    I'm pretty sure can just call model directly
     """
 
 def generate_scene(scene, cat_model, loc_model, orient_model, dims_model):
@@ -47,12 +48,12 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model):
         x, y = sample_location(loc_model, input_img, category)
         """
         TODO translate input image - reference fast_synth.py 514 - 519
-        generate input_img_orient
+        generate input_img_orient, scene needs to be translated according to prediction of location
         """
         sample_orientation(orient_model, input_img_orient, category)
         """
         TODO rotate input image - reference fast_synth.py 522 - 524
-        generate input_img_dims
+        generate input_img_dims, scene needs to be rotated according to output of orientation
         """
         sample_dimensions(dims_model, input_img_dims, category)
 
