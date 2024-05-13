@@ -13,26 +13,6 @@ import sys
 import utils
 from tqdm import tqdm
 
-"""
-Module that predicts the category of the next object
-"""
-
-parser = argparse.ArgumentParser(description='cat')
-parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
-parser.add_argument('--num-workers', type=int, default=6, metavar='N')
-parser.add_argument('--last-epoch', type=int, default=-1, metavar='N')
-parser.add_argument('--train-size', type=int, default=5000, metavar='N')
-parser.add_argument('--save-dir', type=str, default="cat_test", metavar='S')
-parser.add_argument('--save-every-n-epochs', type=int, default=5, metavar='N')
-parser.add_argument('--lr', type=float, default=0.0005, metavar='N')
-parser.add_argument('--dataset', type=str, default="grammar")
-parser.add_argument('--external', action='store_true')
-args = parser.parse_args()
-
-save_dir = args.save_dir
-save_every = args.save_every_n_epochs
-utils.ensuredir(save_dir)
-
 batch_size = 16
 latent_dim = 200
 epoch_size = 10000
@@ -86,12 +66,25 @@ class NextCategory(nn.Module):
 # ---------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    # TODO refactor to be an arg
-    #scenesynth_loc = Path.cwd().parent / "fastsynth_formatted_dataset.json"
-    # scenesynth_loc = Path(args.ss_loc)
-    # if not scenesynth_loc.exists():
-    #     print("ERROR: scenesynth path must exist! Specify with --ss_loc")
-    #     sys.exit(1)
+    """
+    Module that predicts the category of the next object
+    """
+
+    parser = argparse.ArgumentParser(description='cat')
+    parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
+    parser.add_argument('--num-workers', type=int, default=6, metavar='N')
+    parser.add_argument('--last-epoch', type=int, default=-1, metavar='N')
+    parser.add_argument('--train-size', type=int, default=5000, metavar='N')
+    parser.add_argument('--save-dir', type=str, default="cat_test", metavar='S')
+    parser.add_argument('--save-every-n-epochs', type=int, default=5, metavar='N')
+    parser.add_argument('--lr', type=float, default=0.0005, metavar='N')
+    parser.add_argument('--dataset', type=str, default="grammar")
+    parser.add_argument('--external', action='store_true')
+    args = parser.parse_args()
+
+    save_dir = args.save_dir
+    save_every = args.save_every_n_epochs
+    utils.ensuredir(save_dir)
 
     if args.external:
         from src.object.config import object_types

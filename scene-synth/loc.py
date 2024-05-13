@@ -200,7 +200,10 @@ if __name__ == '__main__':
         logfile.flush()
 
     LOG('Building model...')
-    model = Model(num_classes=num_categories+1, num_input_channels=num_input_channels)
+    model = Model(
+        num_classes=num_categories+1,
+        num_input_channels=num_input_channels
+    )
 
     weight = [args.centroid_weight for i in range(num_categories+1)]
     weight[0] = 1
