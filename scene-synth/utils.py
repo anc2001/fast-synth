@@ -88,7 +88,7 @@ def get_scene_orient_dims_dataset(dataset_path : Path, indices) -> SceneDataset:
     scene_dataset = SceneDataset(scenes_path, metadata_path, "fastsynth_orient_dims", indices = indices)
     return scene_dataset
 
-def save_input_img_as_png(input_img, img_index=0, save_path="output_img", output_mask = None):
+def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
     # Ensure input is a PyTorch tensor
     if not isinstance(input_img, torch.Tensor):
         raise TypeError("Input must be a PyTorch tensor.")
@@ -99,32 +99,32 @@ def save_input_img_as_png(input_img, img_index=0, save_path="output_img", output
 
     # Assuming input_img has shape [batch_size, channels, height, width]
     _, channels, height, width = input_img.shape
-
-    # Define colors for categories (assuming up to 20 categories)
-    colors = plt.cm.get_cmap('tab20', 10)  # Modify as necessary based on the number of categories
-
+    
     # Extract room mask and wall mask
     room_mask = input_img[img_index, 1]
     wall_mask = input_img[img_index, 2]
 
     # Initialize an RGB image
+    from src.visualize.config import colors
     rgb_image = np.zeros((height, width, 3))
-    rgb_image[room_mask == 1] = [1.0, 1.0, 1.0]  # White for room
-    rgb_image[wall_mask == 0.5] = [0.0, 0.0, 0.0]  # Black for walls
+    rgb_image[room_mask == 1] = colors['inside']
+    rgb_image[room_mask == 0] = colors['outside']
+    rgb_image[wall_mask == 0.5] = colors['wall']  # Dark gray for walls
 
     # Handle category channels
     num_categories = channels - 6
+    colors = plt.cm.get_cmap('tab20', num_categories)
     for i in range(num_categories):
         category_mask = input_img[img_index, 6 + i] > 0
         color = colors(i)[:3]  # RGB components of the color
         rgb_image[category_mask] = color
+    
+    # Set output_mask to specific color (red)
+    output_mask = input_img[img_index, -1] > 0
+    rgb_image[output_mask] = [1,0,0]
 
-    if output_mask is not None:
-        rgb_image[output_mask[img_index]] = [1.0, 0.0, 0.0]
     # Convert tensor to numpy for saving with matplotlib
-    # Mark the center of the image for debugging
-    rgb_image[128, 128, :] = [0.0, 1.0, 0.0]
-    plt.imsave(f'{save_path}.png', rgb_image)
+    plt.imsave(save_path, rgb_image)
 
 def memoize(func):
     """
