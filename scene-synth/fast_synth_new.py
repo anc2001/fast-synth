@@ -93,10 +93,14 @@ def sample_dimensions(dims_model, input_img, category):
 
 def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device, debug_dir = None):
     iteration = 0
+    import pdb
+    pdb.set_trace()
     while True:
         if debug_dir is not None:
             save_dir = debug_dir / str(iteration)
             save_dir.mkdir(exist_ok = True, parents = True)
+        else:
+            save_dir = None
 
         input_img = torch.tensor(
             scene.to_fastsynth_inputs(), dtype = torch.float32
@@ -125,12 +129,7 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
 
         if debug_dir is not None:
             save_input_img_as_png(input_img_orient.cpu(), save_path=save_dir / "scene_orient.jpg")
-        orient = sample_orientation(orient_model, input_img_orient, category)
-        """
-        TODO rotate input image - reference fast_synth.py 522 - 524
-        generate input_img_dims, scene needs to be rotated according to output of orientation
-        """
-        orientation = torch.tensor([orient], device = input_img.device)
+        orientation = sample_orientation(orient_model, input_img_orient, category)
         
         input_img_dims = inverse_xform_img(
             input_img, translation, orientation, output_size=input_img.shape[-1]
@@ -139,11 +138,34 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
         if debug_dir is not None:
             save_input_img_as_png(input_img_dims.cpu(), save_path=save_dir / "scene_dims.jpg")
         dims = sample_dimensions(dims_model, input_img_dims, category)
+        multiplier = (bedroom_largest_dim / 2)
+        x_dims = dims[0, 1].item() * multiplier
+        y_dims = dims[0, 0].item() * multiplier
+
+        extent = np.array([x_dims, 0, y_dims])
+        query_object = get_furniture_object_from_id(category, extent / 2)
+
+        cos, sin = (orientation[0, 0].item(), orientation[0, 1].item())
+        rotation = [vector_angle_index([cos, 0, sin], [1, 0, 0]) * bin_width]
+        query_object.rotate(rotation)
+
+        # x and y in normalized image space
+        translation = np.array([x, 0, y]) * multiplier 
+        query_object.translate(translation)
+
+        scene.objects.append(query_object)
+        if debug_dir is not None:
+            img = scene.convert_to_image()
+            Image.fromarray(np.uint8(img * 255)).save(save_dir / "scene_final.jpg")
+
+        iteration += 1
 
 if __name__ == '__main__':
-    from src.config import data_filepath
+    from src.config import data_filepath, bedroom_largest_dim, bin_width
     from src.object.config import object_types
     from src.io_utils import read_data
+    from src.utils import vector_angle_index
+    from src.object import get_furniture_object_from_id
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--save-dir", required=True, type=Path, help="save directory for models")
@@ -157,6 +179,7 @@ if __name__ == '__main__':
 
     num_categories = len(object_types)
     num_input_channels = num_categories + 6
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     print("Loading Category Model")
     cat_model = NextCategory(
@@ -180,6 +203,7 @@ if __name__ == '__main__':
         num_input_channels=num_input_channels
     )
     orient_model.load(args.save_dir / orient_name)
+    orient_model.testing = True
 
     print("Loading Dimensions Model")
     dims_model = DimsModel(
@@ -192,6 +216,7 @@ if __name__ == '__main__':
     cat_model.eval()
     loc_model.eval()
     orient_model.eval()
+    dims_model.eval()
     if torch.cuda.is_available():
         cat_model, loc_model, orient_model, dims_model = \
             cat_model.cuda(), loc_model.cuda(), orient_model.cuda(), dims_model.cuda()
@@ -200,7 +225,6 @@ if __name__ == '__main__':
     if debug_dir.exists():
         shutil.rmtree(debug_dir)
 
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     for scene_idx, scene in enumerate(scenes):
         scene_copy = scene.copy(empty=True)
         if args.debug:
@@ -208,7 +232,11 @@ if __name__ == '__main__':
         else:
             scene_debug_dir = None
 
-        generate_scene(
+        generated_scene = generate_scene(
             scene_copy, cat_model, loc_model, orient_model, dims_model, device,
             debug_dir = scene_debug_dir 
         )
+
+        generated_scenes.append(generated_scene)
+
+
