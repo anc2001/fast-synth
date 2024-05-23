@@ -123,6 +123,8 @@ def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
     output_mask = input_img[img_index, -1] > 0
     rgb_image[output_mask] = [1,0,0]
 
+    rgb_image[127:129, 127:129] = [0, 0, 0]
+
     # Convert tensor to numpy for saving with matplotlib
     plt.imsave(save_path, rgb_image)
 

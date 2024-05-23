@@ -6,6 +6,8 @@ import numpy as np
 from PIL import Image
 import shutil
 import math
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 from cat import NextCategory
 from cat import latent_dim as cat_latent_dim
@@ -52,14 +54,7 @@ def sample_location(loc_model, input_img, category, debug_dir = None):
     x, y = divmod(loc_idx, 256)
 
     if debug_dir is not None:
-        Image.fromarray(
-            np.uint8((current_room[0] == 1).cpu() * 255)
-        ).save(debug_dir / "object_mask.jpg")
-        Image.fromarray(
-            np.uint8((current_room[1] > 0).cpu() * 255)
-        ).save(debug_dir / "room_mask.jpg")
-
-        scene_img = np.array(Image.open(debug_dir / "scene.jpg"))
+        scene_img = np.array(Image.open(debug_dir / "scene_start.jpg"))
         color_map = np.zeros((location_map.shape[0], location_map.shape[1], 3)) 
         color_map[..., 0] = (location_map / location_map.max()) * 255
         color_map[x, y] = [255, 255, 255]
@@ -93,8 +88,6 @@ def sample_dimensions(dims_model, input_img, category):
 
 def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device, debug_dir = None):
     iteration = 0
-    import pdb
-    pdb.set_trace()
     while True:
         if debug_dir is not None:
             save_dir = debug_dir / str(iteration)
@@ -114,7 +107,7 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
             break
 
         if debug_dir is not None:
-            save_input_img_as_png(input_img.cpu(), save_path=save_dir / "scene.jpg")
+            save_input_img_as_png(input_img.cpu(), save_path=save_dir / "scene_start.jpg")
         x, y = sample_location(loc_model, input_img, category, debug_dir = save_dir)
         """
         TODO translate input image - reference fast_synth.py 514 - 519
@@ -146,7 +139,9 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
         query_object = get_furniture_object_from_id(category, extent / 2)
 
         cos, sin = (orientation[0, 0].item(), orientation[0, 1].item())
-        rotation = [vector_angle_index([cos, 0, sin], [1, 0, 0]) * bin_width]
+        angle = math.atan2(sin, cos)
+        rotation = [- angle]
+        # Given rotation is ccw, ours is cw
         query_object.rotate(rotation)
 
         # x and y in normalized image space
@@ -160,16 +155,44 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
 
         iteration += 1
 
+        if debug_dir is not None:
+            fig, axs = plt.subplots(nrows = 1, ncols = 5, figsize = (4 * 4, 6))
+            # heatmap 
+            axs[0].imshow(Image.open(save_dir / "heatmap.jpg"))
+            axs[0].set_title('heatmap')
+            # Location heatmap
+            axs[1].imshow(Image.open(save_dir / "scene_heatmap.jpg"))
+            axs[1].set_title(f'scene heatmap : {object_types_map_reverse[category]}')
+            # Image given to orient
+            axs[2].imshow(Image.open(save_dir / "scene_orient.jpg"))
+            axs[2].set_title('orient image')
+            # Image given to dims
+            axs[3].imshow(Image.open(save_dir / "scene_dims.jpg"))
+            axs[3].set_title(f'dims image {cos:.2f} {sin:.2f} {rotation[0]:.2f}') 
+            # Final image
+            axs[4].imshow(Image.open(save_dir / "scene_final.jpg"))
+            axs[4].set_title('final image')
+
+            for ax in axs.flat:
+                ax.axis('off')
+
+            fig.set_tight_layout(True)
+            fig.savefig(save_dir / "collate.jpg")
+            plt.close(fig)
+
+
 if __name__ == '__main__':
     from src.config import data_filepath, bedroom_largest_dim, bin_width
-    from src.object.config import object_types
-    from src.io_utils import read_data
+    from src.object.config import object_types, object_types_map_reverse
+    from src.io_utils import read_data, write_data
     from src.utils import vector_angle_index
     from src.object import get_furniture_object_from_id
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--save-dir", required=True, type=Path, help="save directory for models")
-    parser.add_argument("--out-dir", required=True, type=Path, help="where to output results")
+    parser.add_argument("--output-dir", required=True, type=Path, help="where to output results")
+    parser.add_argument("--num-scenes", type=int, default=25)
+    parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--dataset", type=str, default="grammar")
     args = parser.parse_args()
@@ -221,14 +244,17 @@ if __name__ == '__main__':
         cat_model, loc_model, orient_model, dims_model = \
             cat_model.cuda(), loc_model.cuda(), orient_model.cuda(), dims_model.cuda()
 
-    debug_dir = args.out_dir / "debug"
+    debug_dir = args.output_dir / "debug"
     if debug_dir.exists():
         shutil.rmtree(debug_dir)
 
-    for scene_idx, scene in enumerate(scenes):
+    np.random.seed(seed = args.seed)
+    np.random.shuffle(scenes)
+    generated_scenes = []
+    for scene_idx, scene in enumerate(tqdm(scenes[:args.num_scenes])):
         scene_copy = scene.copy(empty=True)
         if args.debug:
-            scene_debug_dir = debug_dir / f"scene_{scene_idx}" 
+            scene_debug_dir = debug_dir / f"scene_{scene_idx:02d}" 
         else:
             scene_debug_dir = None
 
@@ -238,5 +264,7 @@ if __name__ == '__main__':
         )
 
         generated_scenes.append(generated_scene)
+
+    write_data(generated_scenes, args.output_dir / "generated_scenes.pkl")
 
 
