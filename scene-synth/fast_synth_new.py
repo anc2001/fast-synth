@@ -23,7 +23,7 @@ from models.utils import inverse_xform_img
 from utils import save_input_img_as_png
 
 cat_name = 'nextcat_25.pt'
-loc_name = 'location_14.pt'
+loc_name = 'location_200.pt'
 dims_name = 'model_dims_25.pt'
 orient_name = 'model_orient_115.pt'
 
@@ -37,7 +37,7 @@ def sample_category(cat_model, input_img, cats):
         category = int(category[0])
     return category
 
-def sample_location(loc_model, input_img, category, debug_dir = None):
+def sample_location(loc_model, input_img, category, return_map = False, debug_dir = None):
     with torch.no_grad():
         outputs = loc_model(input_img)
         outputs = F.softmax(outputs, dim = 1)
@@ -68,23 +68,48 @@ def sample_location(loc_model, input_img, category, debug_dir = None):
     x = ((x / 256) - 0.5) * 2
     y = ((y / 256) - 0.5) * 2
 
-    return x, y
+    if return_map:
+        return location_map, x, y
+    else:
+        return x, y
 
 def sample_orientation(orient_model, input_img, category):
-    """
-    TODO - reference fast_synth.py line 520
-    I'm pretty sure can just call directly
-    """
     noise = torch.randn(1, orient_latent_size).to(input_img.device)
     return orient_model.generate(noise, input_img, category)
 
 def sample_dimensions(dims_model, input_img, category):
-    """
-    TODO  - reference fast_synth.py line 526
-    I'm pretty sure can just call model directly
-    """
     noise = torch.randn(1, dims_latent_size).to(input_img.device)
     return dims_model.generate(noise, input_img, category)
+
+def generate_mask(scene, query_object, loc_model, dims_model, device, debug_dir = None):
+    input_img = torch.tensor(
+        scene.to_fastsynth_inputs(), dtype = torch.float32
+    ).unsqueeze(0).to(device)
+
+    category = query_object.id
+    location_map, _, _= sample_location(
+        loc_model, input_img, category, return_map = True, debug_dir = save_dir
+    )
+
+    location_map = location_map / location_map.max()
+    valid_locations = location_map > 0.15
+
+    for nonzero_loc in valid_locations.nonzero():
+        x, y = nonzero_loc[0], nonzero_loc[1]
+        x = ((x / 256) - 0.5) * 2
+        y = ((y / 256) - 0.5) * 2
+        translation = torch.tensor([[x, y]], device=input_img.device)
+
+        for i in range(num_angles):
+            rot = i * bin_width
+            orientation = torch.tensor([[math.cos(rot), math.sin(rot)]], device=input_img.device)
+            input_img_orient = inverse_xform_img(
+                input_img, translation, orientation, output_size=input_img.shape[-1]
+            )
+
+            for _ in range(num_samples):
+                dims = sample_dimensions(dims_model, input_img_dims, category)
+
 
 def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device, debug_dir = None):
     iteration = 0
@@ -109,10 +134,7 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
         if debug_dir is not None:
             save_input_img_as_png(input_img.cpu(), save_path=save_dir / "scene_start.jpg")
         x, y = sample_location(loc_model, input_img, category, debug_dir = save_dir)
-        """
-        TODO translate input image - reference fast_synth.py 514 - 519
-        generate input_img_orient, scene needs to be translated according to prediction of location
-        """
+
         translation = torch.tensor([[x, y]], device=input_img.device)
         orientation = torch.tensor([[math.cos(0), math.sin(0)]], device=input_img.device)
 
@@ -168,7 +190,7 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
             axs[2].set_title('orient image')
             # Image given to dims
             axs[3].imshow(Image.open(save_dir / "scene_dims.jpg"))
-            axs[3].set_title(f'dims image {cos:.2f} {sin:.2f} {rotation[0]:.2f}') 
+            axs[3].set_title(f'dims image') 
             # Final image
             axs[4].imshow(Image.open(save_dir / "scene_final.jpg"))
             axs[4].set_title('final image')
