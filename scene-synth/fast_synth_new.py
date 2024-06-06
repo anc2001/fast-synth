@@ -54,6 +54,7 @@ def sample_location(loc_model, input_img, category, return_map = False, debug_di
     x, y = divmod(loc_idx, 256)
 
     if debug_dir is not None:
+        save_input_img_as_png(input_img.cpu(), save_path = debug_dir / "scene_start.jpg")
         scene_img = np.array(Image.open(debug_dir / "scene_start.jpg"))
         color_map = np.zeros((location_map.shape[0], location_map.shape[1], 3)) 
         color_map[..., 0] = (location_map / location_map.max()) * 255
@@ -81,34 +82,57 @@ def sample_dimensions(dims_model, input_img, category):
     noise = torch.randn(1, dims_latent_size).to(input_img.device)
     return dims_model.generate(noise, input_img, category)
 
-def generate_mask(scene, query_object, loc_model, dims_model, device, debug_dir = None):
+def generate_mask(scene, query_object, loc_model, threshold, device, debug_dir = None):
+    if debug_dir is not None:
+        debug_dir.mkdir(parents = True)
+
     input_img = torch.tensor(
         scene.to_fastsynth_inputs(), dtype = torch.float32
     ).unsqueeze(0).to(device)
 
     category = query_object.id
-    location_map, _, _= sample_location(
-        loc_model, input_img, category, return_map = True, debug_dir = save_dir
+    location_map, _, _ = sample_location(
+        loc_model, input_img, category, return_map = True, debug_dir = debug_dir 
     )
 
     location_map = location_map / location_map.max()
-    valid_locations = location_map > 0.15
+    valid_locations = location_map > threshold
+    mask = np.tile(np.expand_dims(valid_locations, axis = 0), (4, 1, 1))
 
-    for nonzero_loc in valid_locations.nonzero():
-        x, y = nonzero_loc[0], nonzero_loc[1]
-        x = ((x / 256) - 0.5) * 2
-        y = ((y / 256) - 0.5) * 2
-        translation = torch.tensor([[x, y]], device=input_img.device)
+    mask = ensure_placement_validity(mask, scene, query_object)
+    mask_collapsed = np.sum(mask, axis = 0).astype(bool).astype(float) 
 
-        for i in range(num_angles):
-            rot = i * bin_width
-            orientation = torch.tensor([[math.cos(rot), math.sin(rot)]], device=input_img.device)
-            input_img_orient = inverse_xform_img(
-                input_img, translation, orientation, output_size=input_img.shape[-1]
-            )
+    if debug_dir is not None:
+        mask_img_expanded = mask_to_img(mask, scene.convert_to_image())
 
-            for _ in range(num_samples):
-                dims = sample_dimensions(dims_model, input_img_dims, category)
+        mask_img_expanded = Image.fromarray(np.uint8(mask_img_expanded * 255))
+        mask_img_expanded.save(debug_dir / "mask_img_expanded.png")
+
+        mask_img_collapsed = Image.fromarray(np.uint8(mask_collapsed * 255))
+        mask_img_collapsed.save(debug_dir / "mask_img_collapsed.png")
+
+        fig, axs = plt.subplots(nrows = 1, ncols = 4, figsize = (4 * 4, 6))
+        # heatmap 
+        axs[0].imshow(Image.open(debug_dir / "heatmap.jpg"))
+        axs[0].set_title('heatmap')
+        # Location heatmap
+        axs[1].imshow(Image.open(debug_dir / "scene_heatmap.jpg"))
+        axs[1].set_title(f'scene heatmap : {object_types_map_reverse[query_object.id]}')
+        # Mask expanded
+        axs[2].imshow(mask_img_expanded)
+        axs[2].set_title(f'mask img: threshold {threshold}')
+        # Mask collapsed
+        axs[3].imshow(mask_img_collapsed)
+        axs[3].set_title(f'mask img collapsed')
+
+        for ax in axs.flat:
+            ax.axis('off')
+
+        fig.set_tight_layout(True)
+        fig.savefig(debug_dir / "collate.jpg")
+        plt.close(fig)
+
+    return mask_collapsed
 
 
 def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device, debug_dir = None):
@@ -131,8 +155,6 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
         if category == 0:
             break
 
-        if debug_dir is not None:
-            save_input_img_as_png(input_img.cpu(), save_path=save_dir / "scene_start.jpg")
         x, y = sample_location(loc_model, input_img, category, debug_dir = save_dir)
 
         translation = torch.tensor([[x, y]], device=input_img.device)
@@ -209,17 +231,23 @@ if __name__ == '__main__':
     from src.io_utils import read_data, write_data
     from src.utils import vector_angle_index
     from src.object import get_furniture_object_from_id
+    from src.executor.validation import ensure_placement_validity
+    from src.visualize.mask_to_img import mask_to_img
+    from pycocotools.mask import encode
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--save-dir", required=True, type=Path, help="save directory for models")
     parser.add_argument("--output-dir", required=True, type=Path, help="where to output results")
+    parser.add_argument("--mode", required=True, type=str, help="mode to run in, either generate_scene or mask_generation")
     parser.add_argument("--num-scenes", type=int, default=25)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--threshold", type=float, default=0.15)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--dataset", type=str, default="grammar")
     args = parser.parse_args()
 
-    scenes_path = data_filepath / args.dataset / "formatted_data" / "parse.pkl"
+    formatted_data_path = data_filepath / args.dataset / "formatted_data"
+    scenes_path = formatted_data_path / "parse.pkl"
     scenes = read_data(scenes_path)
 
     num_categories = len(object_types)
@@ -270,23 +298,61 @@ if __name__ == '__main__':
     if debug_dir.exists():
         shutil.rmtree(debug_dir)
 
-    np.random.seed(seed = args.seed)
-    np.random.shuffle(scenes)
-    generated_scenes = []
-    for scene_idx, scene in enumerate(tqdm(scenes[:args.num_scenes])):
-        scene_copy = scene.copy(empty=True)
-        if args.debug:
-            scene_debug_dir = debug_dir / f"scene_{scene_idx:02d}" 
-        else:
-            scene_debug_dir = None
+    if args.mode == 'generate_scene':
+        np.random.seed(seed = args.seed)
+        np.random.shuffle(scenes)
+        generated_scenes = []
+        for scene_idx, scene in enumerate(tqdm(scenes[:args.num_scenes])):
+            scene_copy = scene.copy(empty=True)
+            if args.debug:
+                scene_debug_dir = debug_dir / f"scene_{scene_idx:03d}" 
+            else:
+                scene_debug_dir = None
 
-        generated_scene = generate_scene(
-            scene_copy, cat_model, loc_model, orient_model, dims_model, device,
-            debug_dir = scene_debug_dir 
-        )
+            generated_scene = generate_scene(
+                scene_copy, cat_model, loc_model, orient_model, dims_model, device,
+                debug_dir = scene_debug_dir 
+            )
 
-        generated_scenes.append(generated_scene)
+            generated_scenes.append(generated_scene)
 
-    write_data(generated_scenes, args.output_dir / "generated_scenes.pkl")
+        write_data(generated_scenes, args.output_dir / "generated_scenes.pkl")
+    elif args.mode == 'generate_masks':
+        subscenes_meta = read_data(formatted_data_path / 'subscenes_meta.pkl')
+
+        program_data = read_data(formatted_data_path.parent / 'program_data' / 'program_data.pkl')
+        indices = np.arange(args.num_scenes)
+        data = {
+            "scenes_path" : str(formatted_data_path / 'scenes.pkl'),
+            "subscenes_path" : str(formatted_data_path / 'subscenes_meta.pkl'),
+            "program_data" : dict(), 
+            "train_indices" : None,
+            "val_indices" : None, 
+        }
+        for subscene_idx in enumerate(tqdm(indices)):
+            if args.debug:
+                scene_debug_dir = debug_dir / f"subscene_{i:04d}" 
+            else:
+                scene_debug_dir = None
+
+            item = subscenes_meta[subscene_idx]
+            scene = scenes[item['scene_idx']]
+            object_indices = item['object_indices']
+            query_index = item['query_idx']
+            original_scene, original_query_object = scene.subsample(object_indices, query_index)
+
+            mask = generate_mask(
+                original_scene, original_query_object, loc_model, args.threshold, device, debug_dir = scene_debug_dir 
+            )
+            rle = encode(np.asfortranarray(mask.astype(np.uint8)))
+
+            data['program_data'][subscene_idx] = {
+                'program_tokens' : None,
+                'program_mask' : rle,
+            }
+
+        write_data(data, args.output_dir / 'fastsynth_masks.pkl')
+    else:
+        print(args.mode, " not recognized")
 
 
