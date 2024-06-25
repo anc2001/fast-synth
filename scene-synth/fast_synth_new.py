@@ -7,6 +7,7 @@ from PIL import Image
 import shutil
 import math
 from tqdm import tqdm
+import random
 import matplotlib.pyplot as plt
 
 from cat import NextCategory
@@ -21,11 +22,6 @@ from dims import hidden_size as dims_hidden_size
 from models.utils import inverse_xform_img
 
 from utils import save_input_img_as_png
-
-cat_name = 'nextcat_25.pt'
-loc_name = 'location_200.pt'
-dims_name = 'model_dims_25.pt'
-orient_name = 'model_orient_115.pt'
 
 # These arguments are flexibly I'm not sure what they will need to be quite yet
 
@@ -82,7 +78,7 @@ def sample_dimensions(dims_model, input_img, category):
     noise = torch.randn(1, dims_latent_size).to(input_img.device)
     return dims_model.generate(noise, input_img, category)
 
-def generate_mask(scene, query_object, loc_model, threshold, device, debug_dir = None):
+def generate_mask(scene, query_object, loc_model, thresholds, device, debug_dir = None):
     if debug_dir is not None:
         debug_dir.mkdir(parents = True)
 
@@ -96,43 +92,51 @@ def generate_mask(scene, query_object, loc_model, threshold, device, debug_dir =
     )
 
     location_map = location_map / location_map.max()
-    valid_locations = location_map > threshold
-    mask = np.tile(np.expand_dims(valid_locations, axis = 0), (4, 1, 1))
 
-    mask = ensure_placement_validity(mask, scene, query_object)
-    mask_collapsed = np.sum(mask, axis = 0).astype(bool).astype(float) 
+    final_masks = []
+    for threshold in thresholds:
+        valid_locations = location_map > threshold
+        mask = np.tile(np.expand_dims(valid_locations, axis = 0), (4, 1, 1))
 
-    if debug_dir is not None:
-        mask_img_expanded = mask_to_img(mask, scene.convert_to_image())
+        mask = ensure_placement_validity(mask, scene, query_object)
+        mask_collapsed = np.sum(mask, axis = 0).astype(bool).astype(float) 
 
-        mask_img_expanded = Image.fromarray(np.uint8(mask_img_expanded * 255))
-        mask_img_expanded.save(debug_dir / "mask_img_expanded.png")
+        final_masks.append(mask_collapsed)
 
-        mask_img_collapsed = Image.fromarray(np.uint8(mask_collapsed * 255))
-        mask_img_collapsed.save(debug_dir / "mask_img_collapsed.png")
+        if debug_dir is not None:
+            save_dir = debug_dir / f'threshold_{threshold}'
+            save_dir.mkdir()
 
-        fig, axs = plt.subplots(nrows = 1, ncols = 4, figsize = (4 * 4, 6))
-        # heatmap 
-        axs[0].imshow(Image.open(debug_dir / "heatmap.jpg"))
-        axs[0].set_title('heatmap')
-        # Location heatmap
-        axs[1].imshow(Image.open(debug_dir / "scene_heatmap.jpg"))
-        axs[1].set_title(f'scene heatmap : {object_types_map_reverse[query_object.id]}')
-        # Mask expanded
-        axs[2].imshow(mask_img_expanded)
-        axs[2].set_title(f'mask img: threshold {threshold}')
-        # Mask collapsed
-        axs[3].imshow(mask_img_collapsed)
-        axs[3].set_title(f'mask img collapsed')
+            mask_img_expanded = mask_to_img(mask, scene.convert_to_image())
 
-        for ax in axs.flat:
-            ax.axis('off')
+            mask_img_expanded = Image.fromarray(np.uint8(mask_img_expanded * 255))
+            mask_img_expanded.save(save_dir / "mask_img_expanded.png")
 
-        fig.set_tight_layout(True)
-        fig.savefig(debug_dir / "collate.jpg")
-        plt.close(fig)
+            mask_img_collapsed = Image.fromarray(np.uint8(mask_collapsed * 255))
+            mask_img_collapsed.save(save_dir / "mask_img_collapsed.png")
 
-    return mask_collapsed
+            fig, axs = plt.subplots(nrows = 1, ncols = 4, figsize = (4 * 4, 6))
+            # heatmap 
+            axs[0].imshow(Image.open(save_dir / "heatmap.jpg"))
+            axs[0].set_title('heatmap')
+            # Location heatmap
+            axs[1].imshow(Image.open(save_dir / "scene_heatmap.jpg"))
+            axs[1].set_title(f'scene heatmap : {object_types_map_reverse[query_object.id]}')
+            # Mask expanded
+            axs[2].imshow(mask_img_expanded)
+            axs[2].set_title(f'mask img: threshold {threshold}')
+            # Mask collapsed
+            axs[3].imshow(mask_img_collapsed)
+            axs[3].set_title(f'mask img collapsed')
+
+            for ax in axs.flat:
+                ax.axis('off')
+
+            fig.set_tight_layout(True)
+            fig.savefig(save_dir / "collate.jpg")
+            plt.close(fig)
+
+    return final_masks 
 
 
 def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device, debug_dir = None):
@@ -225,6 +229,57 @@ def generate_scene(scene, cat_model, loc_model, orient_model, dims_model, device
             plt.close(fig)
 
 
+def load_cat_model(checkpoint_path, num_input_channels, num_categories, device):
+    print("Loading Category Model")
+    cat_model = NextCategory(
+        num_input_channels,
+        num_categories,
+        cat_latent_dim
+    )
+    cat_model.load_state_dict(torch.load(checkpoint_path))
+    cat_model = cat_model.to(device)
+    cat_model.eval()
+
+    return cat_model
+
+def load_loc_model(checkpoint_path, num_input_channels, num_categories, device):
+    print("Loading Location Model")
+    loc_model = LocModel(
+        num_classes=num_categories,
+        num_input_channels=num_input_channels
+    )
+    loc_model.load_state_dict(torch.load(checkpoint_path))
+    loc_model = loc_model.to(device)
+    loc_model.eval()
+
+    return loc_model
+
+def load_orient_model(checkpoint_path, num_input_channels, device):
+    print("Loading Orientation Model")
+    orient_model = OrientModel(
+        latent_size=orient_latent_size,
+        hidden_size=orient_hidden_size,
+        num_input_channels=num_input_channels
+    )
+    orient_model.load(checkpoint_path)
+    orient_model.testing = True
+    orient_model = orient_model.to(device)
+    orient_model.eval()
+
+    return orient_model
+
+def load_dims_model(checkpoint_path, num_input_channels, device):
+    print("Loading Dimensions Model")
+    dims_model = DimsModel(
+        latent_size=dims_latent_size,
+        hidden_size=dims_hidden_size,
+        num_input_channels=num_input_channels
+    )
+    dims_model.load(checkpoint-path)
+    dims_model = dims_model.to(device)
+    dims_model.eval()
+
+
 if __name__ == '__main__':
     from src.config import data_filepath, bedroom_largest_dim, bin_width
     from src.object.config import object_types, object_types_map_reverse
@@ -241,9 +296,12 @@ if __name__ == '__main__':
     parser.add_argument("--mode", required=True, type=str, help="mode to run in, either generate_scene or mask_generation")
     parser.add_argument("--num-scenes", type=int, default=25)
     parser.add_argument("--seed", type=int, default=123)
-    parser.add_argument("--threshold", type=float, default=0.15)
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--dataset", type=str, default="grammar")
+    parser.add_argument("--dataset", type=str, required=True) 
+    parser.add_argument("--cat-name", type=str, default="nextcat_25.pt")
+    parser.add_argument("--loc-name", type=str, default="location_200.pt")
+    parser.add_argument("--dims-name", type=str, default="model_dims_25.pt")
+    parser.add_argument("--orient-name", type=str, default="model_orient_115.pt")
     args = parser.parse_args()
 
     formatted_data_path = data_filepath / args.dataset / "formatted_data"
@@ -254,51 +312,24 @@ if __name__ == '__main__':
     num_input_channels = num_categories + 6
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    print("Loading Category Model")
-    cat_model = NextCategory(
-        num_input_channels,
-        num_categories,
-        cat_latent_dim
-    )
-    cat_model.load_state_dict(torch.load(args.save_dir / cat_name))
-
-    print("Loading Location Model")
-    loc_model = LocModel(
-        num_classes=num_categories,
-        num_input_channels=num_input_channels
-    )
-    loc_model.load_state_dict(torch.load(args.save_dir / loc_name))
-
-    print("Loading Orientation Model")
-    orient_model = OrientModel(
-        latent_size=orient_latent_size,
-        hidden_size=orient_hidden_size,
-        num_input_channels=num_input_channels
-    )
-    orient_model.load(args.save_dir / orient_name)
-    orient_model.testing = True
-
-    print("Loading Dimensions Model")
-    dims_model = DimsModel(
-        latent_size=dims_latent_size,
-        hidden_size=dims_hidden_size,
-        num_input_channels=num_input_channels
-    )
-    dims_model.load(args.save_dir / dims_name)
-
-    cat_model.eval()
-    loc_model.eval()
-    orient_model.eval()
-    dims_model.eval()
-    if torch.cuda.is_available():
-        cat_model, loc_model, orient_model, dims_model = \
-            cat_model.cuda(), loc_model.cuda(), orient_model.cuda(), dims_model.cuda()
-
     debug_dir = args.output_dir / "debug"
     if debug_dir.exists():
         shutil.rmtree(debug_dir)
 
     if args.mode == 'generate_scene':
+        cat_model = load_cat_model(
+            args.save_dir / args.cat_name, num_input_channels, num_categories, device
+        )
+        loc_model = load_loc_model(
+            args.save_dir / args.loc_name, num_input_channels, num_categories, device
+        )
+        orient_model = load_orient_model(
+            args.save_dir / args.orient_name, num_input_channels, device
+        )
+        dims_model = load_dims_model(
+            args.save_dir / args.dims_name, num_input_channels, device
+        )
+
         np.random.seed(seed = args.seed)
         np.random.shuffle(scenes)
         generated_scenes = []
@@ -318,18 +349,27 @@ if __name__ == '__main__':
 
         write_data(generated_scenes, args.output_dir / "generated_scenes.pkl")
     elif args.mode == 'generate_masks':
+        loc_model = load_loc_model(
+            args.save_dir / args.loc_name, num_input_channels, num_categories, device
+        )
+
         subscenes_meta = read_data(formatted_data_path / 'subscenes_meta.pkl')
 
-        program_data = read_data(formatted_data_path.parent / 'program_data' / 'program_data.pkl')
-        indices = np.arange(args.num_scenes)
+        thresholds = np.linspace(0.1, 0.9, 9).tolist() 
+
+        program_data = read_data(
+            data_filepath / args.dataset / 'program_data' / 'program_data.pkl'
+        )
+        indices = program_data['train_indices'] 
+        indices = random.sample(indices, args.num_scenes)
         data = {
-            "scenes_path" : str(formatted_data_path / 'scenes.pkl'),
-            "subscenes_path" : str(formatted_data_path / 'subscenes_meta.pkl'),
-            "program_data" : dict(), 
-            "train_indices" : None,
-            "val_indices" : None, 
+            "scenes_path" : str(formatted_data_path / 'parse.pkl'),
+            "subscenes_meta_path" : str(formatted_data_path / 'subscenes_meta.pkl'),
+            "thresholds" : thresholds,
+            "masks" : dict(), 
+            "indices" : indices,
         }
-        for subscene_idx in enumerate(tqdm(indices)):
+        for subscene_idx in tqdm(indices):
             if args.debug:
                 scene_debug_dir = debug_dir / f"subscene_{i:04d}" 
             else:
@@ -341,17 +381,17 @@ if __name__ == '__main__':
             query_index = item['query_idx']
             original_scene, original_query_object = scene.subsample(object_indices, query_index)
 
-            mask = generate_mask(
-                original_scene, original_query_object, loc_model, args.threshold, device, debug_dir = scene_debug_dir 
+            masks = generate_mask(
+                original_scene, original_query_object, loc_model, thresholds, device, debug_dir = scene_debug_dir 
             )
-            rle = encode(np.asfortranarray(mask.astype(np.uint8)))
 
-            data['program_data'][subscene_idx] = {
-                'program_tokens' : None,
-                'program_mask' : rle,
-            }
+            to_add = dict()
+            for threshold, mask in zip(thresholds, masks):
+                rle = encode(np.asfortranarray(mask.astype(np.uint8)))
+                to_add[threshold] = rle 
+            data['masks'][subscene_idx] = to_add
 
-        write_data(data, args.output_dir / 'fastsynth_masks.pkl')
+        write_data(data, args.output_dir / 'masks' / 'fastsynth_masks.pkl') 
     else:
         print(args.mode, " not recognized")
 

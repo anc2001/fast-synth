@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 batch_size = 16
 latent_dim = 200
-epoch_size = 10000
+epoch_size = 10000 
 
 
 # -------------------------- -------------------------------------------------------------
@@ -74,6 +74,7 @@ if __name__ == '__main__':
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
     parser.add_argument('--num-workers', type=int, default=6, metavar='N')
     parser.add_argument('--last-epoch', type=int, default=-1, metavar='N')
+    parser.add_argument('--num-epochs', type=int, default=5)
     parser.add_argument('--train-size', type=int, default=5000, metavar='N')
     parser.add_argument('--save-dir', type=str, default="cat_test", metavar='S')
     parser.add_argument('--save-every-n-epochs', type=int, default=5, metavar='N')
@@ -203,11 +204,20 @@ if __name__ == '__main__':
             if num_seen % 800 == 0:
                 LOG(f'Examples {num_seen}/{epoch_size}')
             if num_seen > 0 and num_seen % epoch_size == 0:
-                validate()
+                # validate()
                 num_seen = 0
                 if current_epoch % save_every == 0:
                     torch.save(model.state_dict(), f"{save_dir}/nextcat_{current_epoch}.pt")
                     torch.save(optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt")
+
+                    previous_checkpoint_path = Path(f"{save_dir}/nextcat_{current_epoch - save_every}.pt")
+                    if previous_checkpoint_path.exists():
+                        previous_checkpoint_path.unlink()
+
+                if current_epoch == args.num_epochs:
+                    print("training complete")
+                    return
+
                 current_epoch += 1
                 LOG(f'=========================== Epoch {current_epoch} ===========================')
 
@@ -257,6 +267,4 @@ if __name__ == '__main__':
         LOG(f'Top 5 Accuracy: {num_correct_top5 / num_items}')
         model.train()
 
-    # Train forever (until we stop it)
-    while True:
-        train()
+    train()

@@ -11,6 +11,7 @@ import scipy.misc as m
 import numpy as np
 import math
 import utils
+from pathlib import Path
 
 """
 Module that predicts the location of the next object
@@ -168,6 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
     parser.add_argument('--num-workers', type=int, default=6, metavar='N')
     parser.add_argument('--last-epoch', type=int, default=-10, metavar='N')
+    parser.add_argument('--num-epochs', type=int, default=10)
     parser.add_argument('--train-size', type=int, default=6000, metavar='N')
     parser.add_argument('--save-dir', type=str, default="loc_test", metavar='S')
     parser.add_argument('--ablation', type=str, default=None, metavar='S')
@@ -287,6 +289,14 @@ if __name__ == '__main__':
                 # if current_epoch % 10 == 0:
                 torch.save(model.state_dict(), f"{save_dir}/location_{current_epoch}.pt")
                 torch.save(optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt")
+
+                previous_checkpoint_path = Path(f"{save_dir}/location_{current_epoch - 1}.pt")
+                if previous_checkpoint_path.exists():
+                    previous_checkpoint_path.unlink()
+
+                if current_epoch == args.num_epochs:
+                    print("training_complete")
+                    exit()
 
     while True:
         train()
