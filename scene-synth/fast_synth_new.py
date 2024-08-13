@@ -117,10 +117,10 @@ def generate_mask(scene, query_object, loc_model, thresholds, device, debug_dir 
 
             fig, axs = plt.subplots(nrows = 1, ncols = 4, figsize = (4 * 4, 6))
             # heatmap 
-            axs[0].imshow(Image.open(save_dir / "heatmap.jpg"))
+            axs[0].imshow(Image.open(save_dir.parent / "heatmap.jpg"))
             axs[0].set_title('heatmap')
             # Location heatmap
-            axs[1].imshow(Image.open(save_dir / "scene_heatmap.jpg"))
+            axs[1].imshow(Image.open(save_dir.parent / "scene_heatmap.jpg"))
             axs[1].set_title(f'scene heatmap : {object_types_map_reverse[query_object.id]}')
             # Mask expanded
             axs[2].imshow(mask_img_expanded)
@@ -295,6 +295,7 @@ if __name__ == '__main__':
     parser.add_argument("--output-dir", required=True, type=Path, help="where to output results")
     parser.add_argument("--mode", required=True, type=str, help="mode to run in, either generate_scene or mask_generation")
     parser.add_argument("--num-scenes", type=int, default=25)
+    parser.add_argument("--annotated", action="store_true")
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--dataset", type=str, required=True) 
@@ -360,8 +361,16 @@ if __name__ == '__main__':
         program_data = read_data(
             data_filepath / args.dataset / 'program_data' / 'program_data.pkl'
         )
-        indices = program_data['train_indices'] 
-        indices = random.sample(indices, args.num_scenes)
+        if args.annotated:
+            annotated_mask_path = data_filepath / args.dataset / 'annotated_masks'
+            indices = []
+            for mask_path in annotated_mask_path.glob('*.png'):
+                global_idx = int(mask_path.stem)
+                indices.append(global_idx)
+                assert global_idx in program_data['train_indices']
+        else:
+            indices = program_data['train_indices'] 
+            indices = random.sample(indices, args.num_scenes)
         data = {
             "scenes_path" : str(formatted_data_path / 'parse.pkl'),
             "subscenes_meta_path" : str(formatted_data_path / 'subscenes_meta.pkl'),
@@ -371,7 +380,7 @@ if __name__ == '__main__':
         }
         for subscene_idx in tqdm(indices):
             if args.debug:
-                scene_debug_dir = debug_dir / f"subscene_{i:04d}" 
+                scene_debug_dir = debug_dir / f"subscene_{subscene_idx:04d}" 
             else:
                 scene_debug_dir = None
 
