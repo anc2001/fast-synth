@@ -6,11 +6,16 @@ import utils
 from math_utils import *
 from sklearn import mixture
 
-from priors.observations import RelativeObservationsDatabase, RelativeObservation, ObservationCategory
+from priors.observations import (
+    RelativeObservationsDatabase,
+    RelativeObservation,
+    ObservationCategory,
+)
 
 
 class PairwiseArrangementPrior:
     """Encapsulates arrangement priors for a specific category key (room_type, obj_category, ref_obj_category)"""
+
     def __init__(self, category_key):
         self._category_key = category_key
         self._records = []
@@ -46,16 +51,25 @@ class PairwiseArrangementPrior:
 
     def fit_model(self, gmm_opts=None):
         if gmm_opts is None:
-            gmm_opts = {'n_components': 4, 'covariance_type': 'tied', 'n_init': 5, 'init_params': 'random'}
+            gmm_opts = {
+                "n_components": 4,
+                "covariance_type": "tied",
+                "n_init": 5,
+                "init_params": "random",
+            }
         X = np.stack(self._records, axis=0)
         try:
-            self._gmm_centroid = mixture.BayesianGaussianMixture(**gmm_opts).fit(X[:, 0:2])
-            self._gmm_closest = mixture.BayesianGaussianMixture(**gmm_opts).fit(X[:, 2:4])
+            self._gmm_centroid = mixture.BayesianGaussianMixture(**gmm_opts).fit(
+                X[:, 0:2]
+            )
+            self._gmm_closest = mixture.BayesianGaussianMixture(**gmm_opts).fit(
+                X[:, 2:4]
+            )
             angles = X[:, 4][:, np.newaxis]
             # avoid dirac delta-like peaks that cause fit issues by adding noise
             # angles = np.clip(np.random.normal(angles, scale=math.pi/16), a_min=-np.pi, a_max=np.pi)
-            low = -math.pi * 33. / 32.
-            high = math.pi * 33. / 32.
+            low = -math.pi * 33.0 / 32.0
+            high = math.pi * 33.0 / 32.0
             hist = np.histogram(angles, bins=np.linspace(low, high, num=17))
             h = hist[0] + 1  # add one (i.e. laplace) smoothing on angle histogram
             h = h / np.sum(h)
@@ -65,18 +79,39 @@ class PairwiseArrangementPrior:
             # cos_sin_angles = np.concatenate((np.cos(angles), np.sin(angles)), axis=1)
             # self._vmf_orientation = VonMisesFisherMixture(**vmf_opts).fit(cos_sin_angles)
             # print(self._vmf_orientation.cluster_centers_, self._vmf_orientation.concentrations_)
-            print(f'GMM+VMF fit obtained for {self._category_key} with {len(self._records)} observations')
+            print(
+                f"GMM+VMF fit obtained for {self._category_key} with {len(self._records)} observations"
+            )
         except Exception:
-            print(f'Error fitting priors for {self.category_key} with {len(self._records)} samples.')
+            print(
+                f"Error fitting priors for {self.category_key} with {len(self._records)} samples."
+            )
 
     def plot_model(self):
         X = np.stack(self._records, axis=0)
-        plot_gmm_fit(X[:, 0:2], self._gmm_centroid.predict(X[:, 0:2]), self._gmm_centroid.means_,
-                     self._gmm_centroid.covariances_, 0, str(self._category_key) + ':centroid')
-        plot_gmm_fit(X[:, 2:4], self._gmm_closest.predict(X[:, 2:4]), self._gmm_closest.means_,
-                     self._gmm_closest.covariances_, 1, str(self._category_key) + ':closest')
+        plot_gmm_fit(
+            X[:, 0:2],
+            self._gmm_centroid.predict(X[:, 0:2]),
+            self._gmm_centroid.means_,
+            self._gmm_centroid.covariances_,
+            0,
+            str(self._category_key) + ":centroid",
+        )
+        plot_gmm_fit(
+            X[:, 2:4],
+            self._gmm_closest.predict(X[:, 2:4]),
+            self._gmm_closest.means_,
+            self._gmm_closest.covariances_,
+            1,
+            str(self._category_key) + ":closest",
+        )
         ang = X[:, 4].reshape(-1, 1)
-        plot_hist_fit(ang, self._hist_orientation, 2, title=str(self._category_key) + ':orientation')
+        plot_hist_fit(
+            ang,
+            self._hist_orientation,
+            2,
+            title=str(self._category_key) + ":orientation",
+        )
         # plot_vmf_fit(ang, mu=self._vmf['mu'], kappa=self._vmf['kappa'], scale=self._vmf['scale'],
         #              index=2, title=str(self._category_key) + ':orientation')
         # samples = self.sample(n_samples=1000)
@@ -103,19 +138,25 @@ class PairwiseArrangementPrior:
 
     def log_prob_offset(self, x):
         if not self._gmm_centroid:
-            print(f'Warning: tried log_prob_offset with no prior for {self.category_key}')
+            print(
+                f"Warning: tried log_prob_offset with no prior for {self.category_key}"
+            )
             return math.log(0.5)
         return self._gmm_centroid.score_samples(x[:, 0:2])[:, np.newaxis]
 
     def log_prob_closest(self, x):
         if not self._gmm_closest:
-            print(f'Warning: tried log_prob_closest with no prior for {self.category_key}')
+            print(
+                f"Warning: tried log_prob_closest with no prior for {self.category_key}"
+            )
             return math.log(0.5)
         return self._gmm_closest.score_samples(x[:, 2:4])[:, np.newaxis]
 
     def log_prob_orientation(self, x):
         if not self._hist_orientation:
-            print(f'Warning: tried log_prob_orientation with no prior for {self.category_key}')
+            print(
+                f"Warning: tried log_prob_orientation with no prior for {self.category_key}"
+            )
             return math.log(0.5)
         return self._hist_orientation.logpdf(x[:, 4][:, np.newaxis])
 
@@ -126,23 +167,38 @@ class PairwiseArrangementPrior:
         orientation_samples = self._hist_orientation.rvs(size=(n_samples, 1))
         # orientation_samples = np.random.vonmises(self._vmf['mu'], self._vmf['kappa'], size=(n_samples, 1))
         # print(np.mean(orientation_samples))
-        return np.concatenate((centroid_samples, closest_samples, orientation_samples), axis=1)
+        return np.concatenate(
+            (centroid_samples, closest_samples, orientation_samples), axis=1
+        )
 
     def trim(self):
-        self._records = [None] * len(self._records)  # NOTE force garbage collection of records
+        self._records = [None] * len(
+            self._records
+        )  # NOTE force garbage collection of records
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Compute arrangement priors')
-    parser.add_argument('--task', type=str, required=True, help='<Required> task [fit|load]')
-    parser.add_argument('--priors_dir', type=str, required=True, help='directory to save priors')
-    parser.add_argument('--room_type', type=str, help='room type to filter priors')
-    parser.add_argument('--min_num_observations', type=int, default=100, help='ignore priors with < this observations')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Compute arrangement priors")
+    parser.add_argument(
+        "--task", type=str, required=True, help="<Required> task [fit|load]"
+    )
+    parser.add_argument(
+        "--priors_dir", type=str, required=True, help="directory to save priors"
+    )
+    parser.add_argument("--room_type", type=str, help="room type to filter priors")
+    parser.add_argument(
+        "--min_num_observations",
+        type=int,
+        default=100,
+        help="ignore priors with < this observations",
+    )
     args = parser.parse_args()
 
-    rod = RelativeObservationsDatabase(name='suncg_priors', priors_dir=args.priors_dir, verbose=True)
+    rod = RelativeObservationsDatabase(
+        name="suncg_priors", priors_dir=args.priors_dir, verbose=True
+    )
 
-    if args.task == 'fit':
+    if args.task == "fit":
         rod.load()
         priors = {}
         for obs_category in rod.grouped_observations:
@@ -151,20 +207,26 @@ if __name__ == '__main__':
             pap = PairwiseArrangementPrior(obs_category)
             observations = rod.grouped_observations[obs_category]
             if len(observations) > args.min_num_observations:
-                pap.add_observations(observations, parameterization_scheme='offsets_angles')
+                pap.add_observations(
+                    observations, parameterization_scheme="offsets_angles"
+                )
                 pap.fit_model()
                 priors[obs_category] = pap
-        filename = os.path.join(args.priors_dir, f'priors.pkl.gz')
+        filename = os.path.join(args.priors_dir, f"priors.pkl.gz")
         utils.pickle_dump_compressed(priors, filename)
 
-    if args.task == 'load':
-        filename = os.path.join(args.priors_dir, f'priors.pkl.gz')
+    if args.task == "load":
+        filename = os.path.join(args.priors_dir, f"priors.pkl.gz")
         priors = utils.pickle_load_compressed(filename)
-        for (cat_key, prior) in priors.items():
-            print(f'Loaded PairwiseArrangementPrior for {cat_key} with {prior.num_observations} observations')
+        for cat_key, prior in priors.items():
+            print(
+                f"Loaded PairwiseArrangementPrior for {cat_key} with {prior.num_observations} observations"
+            )
             if prior.num_observations > args.min_num_observations:
-                print(f'centroid: mu={prior.centroid.means_}, w={prior.centroid.weights_}')
-                print(f'closest: mu={prior.closest.means_}, w={prior.closest.weights_}')
+                print(
+                    f"centroid: mu={prior.centroid.means_}, w={prior.centroid.weights_}"
+                )
+                print(f"closest: mu={prior.closest.means_}, w={prior.closest.weights_}")
                 # print(f'orientation: mu={prior.orientation["mu"]}, kappa={prior.orientation["kappa"]}')
                 # samples = prior.sample(n_samples=1000)
                 # lp = prior.log_prob(samples)
@@ -174,7 +236,10 @@ if __name__ == '__main__':
                 # lp_x = prior.log_prob(x)
                 # i_max_x = np.argmax(lp_x, axis=0)
                 # print(f'max observ={x[i_max_x, :]} lp={lp_x[i_max_x, :]}')
-                if cat_key.obj_category == 'office_chair' and cat_key.ref_obj_category == 'desk':
+                if (
+                    cat_key.obj_category == "office_chair"
+                    and cat_key.ref_obj_category == "desk"
+                ):
                     prior.plot_model()
 
-    print('DONE')
+    print("DONE")

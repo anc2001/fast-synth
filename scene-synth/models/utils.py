@@ -14,6 +14,7 @@ class Reshape(nn.Module):
     def forward(self, x):
         return x.view(self.shape)
 
+
 # Render a signed distance field image for a given oriented box
 # img_size: a 2-tuple of image dimensions
 # box_dims: a 2D tensor of x,y box lengths
@@ -45,7 +46,7 @@ def render_obb_sdf(img_size, box_dims, loc, orient):
     coords = torch.Tensor(batch_size, img_size[0], img_size[1], 3)
     coords[:, :, :, 0] = torch.ger(linear_points_x, torch.ones(img_size[0]))
     coords[:, :, :, 1] = torch.ger(torch.ones(img_size[1]), linear_points_y)
-    coords[:, :, :, 2] = 1     # Homogeneous coords
+    coords[:, :, :, 2] = 1  # Homogeneous coords
     # (Non-standard ordering of dimensions (x, y, b, 3) in order to support broadcasting)
     coords = coords.permute(1, 2, 0, 3)
     if loc.is_cuda:
@@ -85,24 +86,36 @@ def render_obb_sdf(img_size, box_dims, loc, orient):
     dist = dist.permute(2, 0, 1)
     return dist.view(batch_size, 1, img_size[0], img_size[1])
 
+
 def log(x):
     return torch.log(torch.max(x, 1e-5))
+
 
 def set_requires_grad(net, requires_grad=False):
     for param in net.parameters():
         param.requires_grad = requires_grad
+
 
 def make_walls_img(dims):
     wall_img = torch.zeros(1, img_size, img_size)
     w = int((dims[0] / 2) * img_size)
     h = int((dims[1] / 2) * img_size)
     mid = img_size // 2
-    wall_img[0, (mid+h):(mid+h+wall_thickness), 0:(mid+w+wall_thickness)] = 1 # Horiz wall
-    wall_img[0, 0:(mid+h+wall_thickness), (mid+w):(mid+w+wall_thickness)] = 1 # Vert wall
+    wall_img[
+        0, (mid + h) : (mid + h + wall_thickness), 0 : (mid + w + wall_thickness)
+    ] = 1  # Horiz wall
+    wall_img[
+        0, 0 : (mid + h + wall_thickness), (mid + w) : (mid + w + wall_thickness)
+    ] = 1  # Vert wall
     return wall_img
+
+
 def make_walls_img_batch(dims_batch):
     batch_size = dims_batch.shape[0]
-    return torch.stack([make_walls_img(dims_batch[i]) for i in range(batch_size)], dim=0)
+    return torch.stack(
+        [make_walls_img(dims_batch[i]) for i in range(batch_size)], dim=0
+    )
+
 
 def unitnormal_normal_kld(mu, logvar, size_average=True):
     # Always reduce along the data dimensionality axis
@@ -113,9 +126,10 @@ def unitnormal_normal_kld(mu, logvar, size_average=True):
         output = torch.mean(output)
     return output
 
+
 def inverse_xform_img(img, loc, orient, output_size, align_corners=True, no_cuda=False):
     batch_size = img.shape[0]
-    matrices = torch.zeros(batch_size, 2, 3, dtype = img.dtype)
+    matrices = torch.zeros(batch_size, 2, 3, dtype=img.dtype)
     if not no_cuda:
         matrices = matrices.cuda()
     cos = orient[:, 0]
@@ -129,6 +143,7 @@ def inverse_xform_img(img, loc, orient, output_size, align_corners=True, no_cuda
     out_size = torch.Size((batch_size, img.shape[1], output_size, output_size))
     grid = F.affine_grid(matrices, out_size, align_corners=align_corners)
     return F.grid_sample(img, grid, align_corners=align_corners)
+
 
 def forward_xform_img(img, loc, orient, output_size):
     # First, build the inverse rotation matrices
@@ -156,32 +171,45 @@ def forward_xform_img(img, loc, orient, output_size):
     grid = F.affine_grid(inv_matrices, out_size)
     return F.grid_sample(img, grid)
 
+
 def default_loc_orient(batch_size, no_cuda=False):
     loc = torch.zeros(batch_size, 2)
-    orient = torch.stack([torch.Tensor([math.cos(0), math.sin(0)]) for i in range(batch_size)], dim=0)
+    orient = torch.stack(
+        [torch.Tensor([math.cos(0), math.sin(0)]) for i in range(batch_size)], dim=0
+    )
     if not no_cuda:
         return loc.cuda(), orient.cuda()
     return loc, orient
 
+
 class DownConvBlock(nn.Module):
     def __init__(self, inplanes, outplanes):
         super(DownConvBlock, self).__init__()
-        self.conv = nn.Conv2d(inplanes, outplanes, stride=2, kernel_size=3, padding=1, bias=True)
+        self.conv = nn.Conv2d(
+            inplanes, outplanes, stride=2, kernel_size=3, padding=1, bias=True
+        )
         self.bn = nn.BatchNorm2d(outplanes)
         self.activation = nn.ReLU()
+
     def forward(self, x):
         # return self.activation(self.conv(x))
         return self.activation(self.bn(self.conv(x)))
+
 
 def make_walls_img(dims):
     wall_img = torch.zeros(1, img_size, img_size)
     w = int((dims[0] / 2) * img_size)
     h = int((dims[1] / 2) * img_size)
     mid = img_size // 2
-    wall_img[0, (mid+h):(mid+h+wall_thickness), 0:(mid+w+wall_thickness)] = 1 # Horiz wall
-    wall_img[0, 0:(mid+h+wall_thickness), (mid+w):(mid+w+wall_thickness)] = 1 # Vert wall
+    wall_img[
+        0, (mid + h) : (mid + h + wall_thickness), 0 : (mid + w + wall_thickness)
+    ] = 1  # Horiz wall
+    wall_img[
+        0, 0 : (mid + h + wall_thickness), (mid + w) : (mid + w + wall_thickness)
+    ] = 1  # Vert wall
     # wall_img[0, :, (mid+w):(mid+w+wall_thickness)] = 1 # Vert wall
     return wall_img
+
 
 def render_orientation_sdf(img_size, dims, loc, orient):
     batch_size = loc.shape[0]
@@ -201,7 +229,7 @@ def render_orientation_sdf(img_size, dims, loc, orient):
     coords = torch.Tensor(batch_size, img_size[0], img_size[1], 3)
     coords[:, :, :, 0] = torch.ger(linear_points_x, torch.ones(img_size[0]))
     coords[:, :, :, 1] = torch.ger(torch.ones(img_size[1]), linear_points_y)
-    coords[:, :, :, 2] = 1     # Homogeneous coords
+    coords[:, :, :, 2] = 1  # Homogeneous coords
     # (Non-standard ordering of dimensions (x, y, b, 3) in order to support broadcasting)
     coords = coords.permute(1, 2, 0, 3)
     if loc.is_cuda:
@@ -236,7 +264,7 @@ def render_orientation_sdf(img_size, dims, loc, orient):
 
     # Now evaluate the SDF of an axis-aligned plane
     # (Signed dist to plane is just the x coordinate)
-    dist = coords[:, :, :, 0] 
+    dist = coords[:, :, :, 0]
     dist = dist.permute(2, 0, 1)
     return dist.view(batch_size, 1, img_size[0], img_size[1])
 
@@ -246,6 +274,7 @@ def render_orientation_sdf(img_size, dims, loc, orient):
     # dist = dist.permute(2, 3, 0, 1)
     # return dist
 
+
 # Like stack the regular bbox SDF with the orientation plane SDF
 def render_oriented_sdf(img_sizes, dims, loc, orient):
     sdf = render_obb_sdf(img_sizes, dims, loc, orient)
@@ -254,22 +283,31 @@ def render_oriented_sdf(img_sizes, dims, loc, orient):
     # osdf = render_orientation_sdf_slow(img_sizes, dims, loc, orient)
     return torch.cat([sdf, osdf], dim=1)
 
-CARDINAL_ANGLES = torch.Tensor([0, math.pi/2, math.pi, 3*math.pi/2])
+
+CARDINAL_ANGLES = torch.Tensor([0, math.pi / 2, math.pi, 3 * math.pi / 2])
 CARDINAL_DIRECTIONS = torch.stack([CARDINAL_ANGLES.cos(), CARDINAL_ANGLES.sin()], dim=1)
+
 
 # Snap an orientation to its nearest cardinal direction
 def snap_orient(orient):
-    sims = [F.cosine_similarity(orient, cdir.unsqueeze(0).cuda()) for cdir in CARDINAL_DIRECTIONS]
+    sims = [
+        F.cosine_similarity(orient, cdir.unsqueeze(0).cuda())
+        for cdir in CARDINAL_DIRECTIONS
+    ]
     sims = torch.stack(sims, dim=1)
     maxvals, indices = sims.max(dim=1)
     return CARDINAL_DIRECTIONS[indices].cuda()
 
+
 def should_snap(orient):
-    snap_sims = [F.cosine_similarity(orient, cdir.unsqueeze(0)) for cdir in CARDINAL_DIRECTIONS]
+    snap_sims = [
+        F.cosine_similarity(orient, cdir.unsqueeze(0)) for cdir in CARDINAL_DIRECTIONS
+    ]
     snap_sims = torch.stack(snap_sims, dim=1)
     snap_sim, _ = snap_sims.max(dim=1)
     snap = (snap_sim > (1 - 1e-4)).float()
     return snap
+
 
 def index_to_onehot(indices, numclasses):
     """
@@ -283,6 +321,7 @@ def index_to_onehot(indices, numclasses):
         one_hot[i][cat_index] = 1
     return one_hot
 
+
 def index_to_onehot_fast(indices, numclasses):
     """A better version of index to one-hot that uses scatter"""
     indices = indices.unsqueeze(-1)
@@ -292,6 +331,7 @@ def index_to_onehot_fast(indices, numclasses):
     onehot.scatter_(1, indices, 1)
     return onehot
 
+
 def nearest_downsample(img, factor):
     """
     Do nearest-neighbor downsampling on an image tensor with
@@ -299,14 +339,17 @@ def nearest_downsample(img, factor):
     Img must be a 4D B x C x H x W tensor
     Factor must be an integer (is converted to one)
     """
-    assert (factor > 0 and factor == int(factor)), 'Downsample factor must be positive integer'
+    assert factor > 0 and factor == int(
+        factor
+    ), "Downsample factor must be positive integer"
     # We do this by convolving with a strided convolutional kernel, whose kernel
     #    is size one and is the identity matrix between input and output channels
     nchannels = img.shape[1]
     kernel = torch.eye(nchannels).view(nchannels, nchannels, 1, 1)
     if img.is_cuda:
-            kernel = kernel.cuda()
+        kernel = kernel.cuda()
     return F.conv2d(img, weight=kernel, stride=factor)
+
 
 def softmax2d(img):
     """Softmax across the pixels of an image batch"""
@@ -316,39 +359,45 @@ def softmax2d(img):
     img = img.view(-1, size, size)
     return img
 
+
 def mask_to_outline(img):
     num_channels = img.shape[1]
     efx = torch.zeros(num_channels, num_channels, 3, 3)
     efy = torch.zeros(num_channels, num_channels, 3, 3)
     for i in range(num_channels):
-            efx[i, i, :, :] = edge_filters_x
-            efy[i, i, :, :] = edge_filters_y
+        efx[i, i, :, :] = edge_filters_x
+        efy[i, i, :, :] = edge_filters_y
     if img.is_cuda:
-            efx = efx.cuda()
-            efy = efy.cuda()
+        efx = efx.cuda()
+        efy = efy.cuda()
     edges_x = F.conv2d(img, efx, padding=1)
     edges_y = F.conv2d(img, efy, padding=1)
     edges = edges_x + edges_y
     return (edges != 0).float()
 
+
 def mask_to_sdf(img):
     outline = mask_to_outline(img)
     outline_neg = 1 - outline
     dists = torch.tensor(distance_transform_edt(outline_neg)).float()
-    diag_len = math.sqrt(2*img.shape[2]*img.shape[2])
-    dists = dists / diag_len    # normalize
+    diag_len = math.sqrt(2 * img.shape[2] * img.shape[2])
+    dists = dists / diag_len  # normalize
     return torch.where(img > 0, -dists, dists)
+
 
 # Converting image batch tensors that represent binary masks into outlines
 #    and signed distance functions
-edge_filters_x = torch.tensor([
-    [0, 0, 0],
-    [-1, 0, 1],
-    [0, 0, 0],
-]).float()
-edge_filters_y = torch.tensor([
-    [0, -1, 0],
-    [0, 0, 0],
-    [0, 1, 0],
-]).float()
-
+edge_filters_x = torch.tensor(
+    [
+        [0, 0, 0],
+        [-1, 0, 1],
+        [0, 0, 0],
+    ]
+).float()
+edge_filters_y = torch.tensor(
+    [
+        [0, -1, 0],
+        [0, 0, 0],
+        [0, 1, 0],
+    ]
+).float()

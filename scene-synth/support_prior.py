@@ -8,7 +8,9 @@ import utils
 """
 Simple bigram model
 """
-class SupportPrior():
+
+
+class SupportPrior:
 
     def __init__(self):
         pass
@@ -26,21 +28,25 @@ class SupportPrior():
         with open(f"{data_dir}/final_categories_frequency", "r") as f:
             lines = f.readlines()
             cats = [line.split()[0] for line in lines]
-            self.category_count = [int(line.split()[1]) for line in lines if line.split()[0] not in ["window", "door"]]
+            self.category_count = [
+                int(line.split()[1])
+                for line in lines
+                if line.split()[0] not in ["window", "door"]
+            ]
 
-        self.categories = [cat for cat in cats if cat not in set(['window', 'door'])]
-        self.cat_to_index = {self.categories[i]:i for i in range(len(self.categories))}
+        self.categories = [cat for cat in cats if cat not in set(["window", "door"])]
+        self.cat_to_index = {self.categories[i]: i for i in range(len(self.categories))}
         self.num_categories = len(self.categories)
         self.categories.append("floor")
         N = self.num_categories
-        
-        self.support_count = [[0 for i in range(N+1)] for j in range(N)]
+
+        self.support_count = [[0 for i in range(N + 1)] for j in range(N)]
 
         for index in range(len(files)):
             print(index)
             with open(f"{data_dir}/{index}.pkl", "rb") as f:
                 (_, _, nodes), _ = pickle.load(f)
-            
+
             object_nodes = []
             id_to_cat = {}
             for node in nodes:
@@ -50,7 +56,7 @@ class SupportPrior():
                     object_nodes.append(node)
                     id_to_cat[node["id"]] = self.cat_to_index[category]
                     node["category"] = self.cat_to_index[category]
-            
+
             for node in object_nodes:
                 parent = node["parent"]
                 category = node["category"]
@@ -58,19 +64,22 @@ class SupportPrior():
                     self.support_count[category][-1] += 1
                 else:
                     self.support_count[category][id_to_cat[parent]] += 1
-            #quit()
+            # quit()
 
-        self.possible_supports={}
+        self.possible_supports = {}
         for i in range(self.num_categories):
             print(f"Support for {self.categories[i]}:")
-            supports = [(c, self.support_count[i][c]/self.category_count[i]) for c in range(N+1)]
-            supports = sorted(supports, key = lambda x:-x[1])
+            supports = [
+                (c, self.support_count[i][c] / self.category_count[i])
+                for c in range(N + 1)
+            ]
+            supports = sorted(supports, key=lambda x: -x[1])
             supports = [s for s in supports if s[1] > 0.01]
             for s in supports:
                 print(f"    {self.categories[s[0]]}:{s[1]:4f}")
             self.possible_supports[i] = [s[0] for s in supports]
-        
-        print(self.possible_supports)       
+
+        print(self.possible_supports)
         self.N = N
 
     def save(self, dest=None):
@@ -83,8 +92,8 @@ class SupportPrior():
         source = f"{data_dir}/support_prior.pkl"
         with open(source, "rb") as f:
             self.__dict__ = pickle.load(f)
-    
-            
+
+
 if __name__ == "__main__":
     a = SupportPrior()
     # a.learn("toilet_6x6")
@@ -92,5 +101,5 @@ if __name__ == "__main__":
     # a.learn("living_6x6_aug")
     a.learn("toilet_6x6")
     a.save()
-    #a.load()
-    #print(a.get_models(1, ["415"]))
+    # a.load()
+    # print(a.get_models(1, ["415"]))

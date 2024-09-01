@@ -17,10 +17,12 @@ from pathlib import Path
 Module that predicts the location of the next object
 """
 
+
 def conv3x3(in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
+    return nn.Conv2d(
+        in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
+    )
 
 
 class BasicBlock(nn.Module):
@@ -54,13 +56,17 @@ class BasicBlock(nn.Module):
 
         return out
 
+
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=2, num_input_channels=17, use_fc=False):
+    def __init__(
+        self, block, layers, num_classes=2, num_input_channels=17, use_fc=False
+    ):
         self.inplanes = 64
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv2d(num_input_channels, 64, kernel_size=7, stride=4, padding=3,
-                               bias=False)
+        self.conv1 = nn.Conv2d(
+            num_input_channels, 64, kernel_size=7, stride=4, padding=3, bias=False
+        )
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.LeakyReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -73,12 +79,12 @@ class ResNet(nn.Module):
 
         self.use_fc = use_fc
         if use_fc:
-            self.fc = nn.Linear(512*block.expansion, num_classes)
+            self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.weight.data.normal_(0, math.sqrt(2.0 / n))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -87,8 +93,13 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
+                nn.Conv2d(
+                    self.inplanes,
+                    planes * block.expansion,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False,
+                ),
                 nn.BatchNorm2d(planes * block.expansion),
             )
 
@@ -114,7 +125,8 @@ class ResNet(nn.Module):
         x = self.avgpool(x)
 
         return x
-        
+
+
 def resnet34(pretrained=False, **kwargs):
     """Constructs a ResNet-34 model.
     Args:
@@ -123,14 +135,17 @@ def resnet34(pretrained=False, **kwargs):
     model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
     return model
 
+
 class DownConvBlock(nn.Module):
     def __init__(self, inplanes, outplanes):
         super(DownConvBlock, self).__init__()
         self.conv = nn.Conv2d(inplanes, outplanes, stride=2, kernel_size=4, padding=1)
         self.bn = nn.BatchNorm2d(outplanes)
         self.act = nn.LeakyReLU()
+
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
+
 
 class UpConvBlock(nn.Module):
     def __init__(self, inplanes, outplanes):
@@ -138,9 +153,11 @@ class UpConvBlock(nn.Module):
         self.conv = nn.Conv2d(inplanes, outplanes, stride=1, kernel_size=3, padding=1)
         self.bn = nn.BatchNorm2d(outplanes)
         self.act = nn.LeakyReLU()
+
     def forward(self, x):
-        x = F.upsample(x, mode='nearest', scale_factor=2)
+        x = F.upsample(x, mode="nearest", scale_factor=2)
         return self.act(self.bn(self.conv(x)))
+
 
 class Model(nn.Module):
     def __init__(self, num_classes, num_input_channels):
@@ -157,27 +174,31 @@ class Model(nn.Module):
             UpConvBlock(32, 16),
             UpConvBlock(16, 8),
             nn.Dropout(p=0.1),
-            nn.Conv2d(8,num_classes,1,1)
+            nn.Conv2d(8, num_classes, 1, 1),
         )
 
     def forward(self, x):
         x = self.model(x)
         return x
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Location Training with Auxillary Tasks')
-    parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
-    parser.add_argument('--num-workers', type=int, default=6, metavar='N')
-    parser.add_argument('--last-epoch', type=int, default=-10, metavar='N')
-    parser.add_argument('--num-epochs', type=int, default=10)
-    parser.add_argument('--train-size', type=int, default=6000, metavar='N')
-    parser.add_argument('--save-dir', type=str, default="loc_test", metavar='S')
-    parser.add_argument('--ablation', type=str, default=None, metavar='S')
-    parser.add_argument('--lr', type=float, default=0.001, metavar='N')
-    parser.add_argument('--eps', type=float, default=1e-6, metavar='N')
-    parser.add_argument('--centroid-weight', type=float, default=10, metavar="N")
-    parser.add_argument('--dataset', type=str, default="grammar")
-    parser.add_argument('--external', action='store_true')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Location Training with Auxillary Tasks"
+    )
+    parser.add_argument("--data-folder", type=str, default="bedroom_6x6", metavar="S")
+    parser.add_argument("--num-workers", type=int, default=6, metavar="N")
+    parser.add_argument("--last-epoch", type=int, default=-10, metavar="N")
+    parser.add_argument("--num-epochs", type=int, default=10)
+    parser.add_argument("--train-size", type=int, default=6000, metavar="N")
+    parser.add_argument("--save-dir", type=str, default="loc_test", metavar="S")
+    parser.add_argument("--ablation", type=str, default=None, metavar="S")
+    parser.add_argument("--lr", type=float, default=0.001, metavar="N")
+    parser.add_argument("--eps", type=float, default=1e-6, metavar="N")
+    parser.add_argument("--centroid-weight", type=float, default=10, metavar="N")
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--external", action="store_true")
+    parser.add_argument("--split", type=str, required=True)
     args = parser.parse_args()
 
     save_dir = args.save_dir
@@ -186,28 +207,27 @@ if __name__ == '__main__':
 
     if args.external:
         from src.object.config import object_types
+
         num_categories = len(object_types) - 1
         num_input_channels = num_categories + 7
     else:
         with open(f"data/{args.data_folder}/final_categories_frequency", "r") as f:
             lines = f.readlines()
-        num_categories = len(lines)-2
+        num_categories = len(lines) - 2
 
-        num_input_channels = num_categories+8
+        num_input_channels = num_categories + 8
 
-    logfile = open(f"{save_dir}/log_location.txt", 'w')
+    logfile = open(f"{save_dir}/log_location.txt", "w")
+
     def LOG(msg):
         print(msg)
-        logfile.write(msg + '\n')
+        logfile.write(msg + "\n")
         logfile.flush()
 
-    LOG('Building model...')
-    model = Model(
-        num_classes=num_categories+1,
-        num_input_channels=num_input_channels
-    )
+    LOG("Building model...")
+    model = Model(num_classes=num_categories + 1, num_input_channels=num_input_channels)
 
-    weight = [args.centroid_weight for i in range(num_categories+1)]
+    weight = [args.centroid_weight for i in range(num_categories + 1)]
     weight[0] = 1
     print(weight)
 
@@ -215,33 +235,34 @@ if __name__ == '__main__':
     cross_entropy = nn.CrossEntropyLoss(weight=weight)
     softmax = nn.Softmax()
 
-    LOG('Converting to CUDA...')
+    LOG("Converting to CUDA...")
     model.cuda()
     cross_entropy.cuda()
 
     if args.external:
         from src.config import data_filepath
-        train_dataset = utils.get_scene_loc_dataset(data_filepath / args.dataset)
+
+        train_dataset = utils.get_scene_loc_dataset(
+            data_filepath / args.dataset, split=args.split
+        )
     else:
-        LOG('Building dataset...')
+        LOG("Building dataset...")
         train_dataset = LocDataset(
-            data_root_dir = 'data',
-            data_folder = args.data_folder,
-            scene_indices = (0, args.train_size),
+            data_root_dir="data",
+            data_folder=args.data_folder,
+            scene_indices=(0, args.train_size),
         )
 
-    LOG('Building data loader...')
+    LOG("Building data loader...")
     train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size = batch_size,
-        num_workers = args.num_workers,
-        shuffle = True
+        train_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=True
     )
 
-    LOG('Building optimizer...')
-    optimizer = optim.Adam(model.parameters(),
-        lr = args.lr,
-        weight_decay = 2e-6,
+    LOG("Building optimizer...")
+    optimizer = optim.Adam(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=2e-6,
     )
 
     if args.last_epoch < 0:
@@ -252,7 +273,7 @@ if __name__ == '__main__':
         last_epoch = args.last_epoch
 
     if load:
-        LOG('Loading saved models...')
+        LOG("Loading saved models...")
         model.load_state_dict(torch.load(f"{save_dir}/location_{last_epoch}.pt"))
         optimizer.load_state_dict(torch.load(f"{save_dir}/location_optim_backup.pt"))
         starting_epoch = last_epoch + 1
@@ -261,18 +282,19 @@ if __name__ == '__main__':
     num_seen = 0
 
     model.train()
-    LOG(f'=========================== Epoch {current_epoch} ===========================')
+    LOG(
+        f"=========================== Epoch {current_epoch} ==========================="
+    )
 
     def train():
         global num_seen, current_epoch
-        for batch_idx, (data, target) \
-                       in enumerate(train_loader):
+        for batch_idx, (data, target) in enumerate(train_loader):
 
             data, target = data.cuda(), target.cuda()
 
             optimizer.zero_grad()
             output = model(data)
-            loss = cross_entropy(output,target)
+            loss = cross_entropy(output, target)
             print(loss.cpu().item())
 
             loss.backward()
@@ -280,17 +302,25 @@ if __name__ == '__main__':
 
             num_seen += batch_size
             if num_seen % 800 == 0:
-                LOG(f'Examples {num_seen}/10000')
+                LOG(f"Examples {num_seen}/10000")
             if num_seen % 10000 == 0:
-                LOG('Validating')
+                LOG("Validating")
                 num_seen = 0
                 current_epoch += 1
-                LOG(f'=========================== Epoch {current_epoch} ===========================')
+                LOG(
+                    f"=========================== Epoch {current_epoch} ==========================="
+                )
                 # if current_epoch % 10 == 0:
-                torch.save(model.state_dict(), f"{save_dir}/location_{current_epoch}.pt")
-                torch.save(optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt")
+                torch.save(
+                    model.state_dict(), f"{save_dir}/location_{current_epoch}.pt"
+                )
+                torch.save(
+                    optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt"
+                )
 
-                previous_checkpoint_path = Path(f"{save_dir}/location_{current_epoch - 1}.pt")
+                previous_checkpoint_path = Path(
+                    f"{save_dir}/location_{current_epoch - 1}.pt"
+                )
                 if previous_checkpoint_path.exists():
                     previous_checkpoint_path.unlink()
 

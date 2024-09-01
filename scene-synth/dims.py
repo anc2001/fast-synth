@@ -27,6 +27,7 @@ hidden_size = 40
 output_size = 2
 # ---------------------------------------------------------------------------------------
 
+
 class Model(nn.Module):
 
     def make_net_fn(self, netdict, makefn):
@@ -42,6 +43,7 @@ class Model(nn.Module):
                     net = net.cuda()
                 netdict[cat] = net
                 return net
+
         return net_fn
 
     def __init__(self, latent_size, hidden_size, num_input_channels, nocuda=False):
@@ -52,7 +54,7 @@ class Model(nn.Module):
         def make_encoder():
             return nn.Sequential(
                 # 64 -> 32
-                DownConvBlock(num_input_channels+1, 8),
+                DownConvBlock(num_input_channels + 1, 8),
                 # 32 -> 16
                 DownConvBlock(8, 16),
                 # 16 -> 8
@@ -63,7 +65,7 @@ class Model(nn.Module):
                 nn.AdaptiveAvgPool2d(1),
                 # Final linear layer
                 Reshape(-1, 64),
-                nn.Linear(64, 2*latent_size)
+                nn.Linear(64, 2 * latent_size),
             )
 
         def make_cond_prior():
@@ -80,25 +82,25 @@ class Model(nn.Module):
                 nn.AdaptiveAvgPool2d(1),
                 # Final linear layer
                 Reshape(-1, 64),
-                nn.Linear(64, latent_size)
+                nn.Linear(64, latent_size),
             )
 
         def make_generator():
             return nn.Sequential(
-                nn.Linear(2*latent_size, hidden_size),
+                nn.Linear(2 * latent_size, hidden_size),
                 nn.BatchNorm1d(hidden_size),
                 nn.LeakyReLU(),
                 nn.Linear(hidden_size, hidden_size),
                 nn.BatchNorm1d(hidden_size),
                 nn.LeakyReLU(),
                 nn.Linear(hidden_size, output_size),
-                nn.Softplus()
+                nn.Softplus(),
             )
 
         def make_discriminator():
             return nn.Sequential(
                 # 64 -> 32
-                DownConvBlock(num_input_channels+1, 8),
+                DownConvBlock(num_input_channels + 1, 8),
                 # 32 -> 16
                 DownConvBlock(8, 16),
                 # 16 -> 8
@@ -110,7 +112,7 @@ class Model(nn.Module):
                 # Final linear layer
                 Reshape(-1, 64),
                 nn.Linear(64, 1),
-                nn.Sigmoid()
+                nn.Sigmoid(),
             )
 
         self.encoders = nn.ModuleDict()
@@ -128,7 +130,7 @@ class Model(nn.Module):
         return torch.split(mu_logvar, self.latent_size, dim=1)
 
     def sample(self, mu, logvar):
-        std = torch.exp(0.5*logvar)
+        std = torch.exp(0.5 * logvar)
         gdis = torch.distributions.Normal(mu, std)
         return gdis.rsample()
 
@@ -140,43 +142,45 @@ class Model(nn.Module):
         return self.discriminator(cat)(torch.cat([sdf, walls], dim=1))
 
     def set_requires_grad(self, phase, cat):
-        if phase == 'D':
+        if phase == "D":
             set_requires_grad(self.generator(cat), False)
             set_requires_grad(self.discriminator(cat), True)
             set_requires_grad(self.encoder(cat), False)
             set_requires_grad(self.cond_prior(cat), False)
-        elif phase == 'G':
+        elif phase == "G":
             set_requires_grad(self.generator(cat), True)
             set_requires_grad(self.discriminator(cat), False)
             set_requires_grad(self.encoder(cat), False)
             set_requires_grad(self.cond_prior(cat), True)
-        elif phase == 'VAE':
+        elif phase == "VAE":
             set_requires_grad(self.generator(cat), True)
             set_requires_grad(self.discriminator(cat), False)
             set_requires_grad(self.encoder(cat), True)
             set_requires_grad(self.cond_prior(cat), True)
         else:
-            raise ValueError(f'Unrecognized phase {phase}')
+            raise ValueError(f"Unrecognized phase {phase}")
 
     def save(self, filename):
-        torch.save({
-            'cats_seen': list(self.generators.keys()),
-            'state': self.state_dict()
-        }, filename)
+        torch.save(
+            {"cats_seen": list(self.generators.keys()), "state": self.state_dict()},
+            filename,
+        )
 
     def load(self, filename):
         blob = torch.load(filename)
-        for cat in blob['cats_seen']:
+        for cat in blob["cats_seen"]:
             _ = self.encoder(cat)
             _ = self.cond_prior(cat)
             _ = self.generator(cat)
             _ = self.discriminator(cat)
-        self.load_state_dict(blob['state'])
+        self.load_state_dict(blob["state"])
+
 
 class Optimizers:
 
     def make_optimizer_fn(self, optimizers, list_of_netfns):
         this = self
+
         def optimizer_fn(cat):
             cat = str(cat)
             if cat in optimizers:
@@ -188,6 +192,7 @@ class Optimizers:
                 optimizer = optim.Adam(params, lr=this.lr)
                 optimizers[cat] = optimizer
                 return optimizer
+
         return optimizer_fn
 
     def __init__(self, model, lr):
@@ -195,14 +200,18 @@ class Optimizers:
         self.g_optimizers = {}
         self.d_optimizers = {}
         self.e_optimizers = {}
-        self.g_optimizer = self.make_optimizer_fn(self.g_optimizers, [model.generator, model.cond_prior])
-        self.d_optimizer = self.make_optimizer_fn(self.d_optimizers, [model.discriminator])
+        self.g_optimizer = self.make_optimizer_fn(
+            self.g_optimizers, [model.generator, model.cond_prior]
+        )
+        self.d_optimizer = self.make_optimizer_fn(
+            self.d_optimizers, [model.discriminator]
+        )
         self.e_optimizer = self.make_optimizer_fn(self.e_optimizers, [model.encoder])
 
     def save(self, filename):
-        g_state = {cat : opt.state_dict() for cat, opt in self.g_optimizers.items()}
-        d_state = {cat : opt.state_dict() for cat, opt in self.d_optimizers.items()}
-        e_state = {cat : opt.state_dict() for cat, opt in self.e_optimizers.items()}
+        g_state = {cat: opt.state_dict() for cat, opt in self.g_optimizers.items()}
+        d_state = {cat: opt.state_dict() for cat, opt in self.d_optimizers.items()}
+        e_state = {cat: opt.state_dict() for cat, opt in self.e_optimizers.items()}
         torch.save([g_state, d_state, e_state], filename)
 
     def load(self, filename):
@@ -210,16 +219,17 @@ class Optimizers:
         g_state = states[0]
         d_state = states[1]
         e_state = states[2]
-        for cat,state in g_state:
+        for cat, state in g_state:
             self.g_optimizer(cat).load_state_dict(state)
-        for cat,state in d_state:
+        for cat, state in d_state:
             self.d_optimizer(cat).load_state_dict(state)
-        for cat,state in e_state:
+        for cat, state in e_state:
             self.e_optimizer(cat).load_state_dict(state)
+
 
 # ---------------------------------------------------------------------------------------
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     latent_size = 10
     hidden_size = 40
     output_size = 2
@@ -238,22 +248,23 @@ if __name__ == '__main__':
     jitter_loc_stdev = 0.01
     jitter_orient_stdev = 0.01
 
-    parser = argparse.ArgumentParser(description='dims')
-    parser.add_argument('--save-dir', type=str, required=True)
-    parser.add_argument('--data-folder', type=str, default="bedroom_6x6")
-    parser.add_argument('--dataset', type=str, default="grammar")
-    parser.add_argument('--num-examples', type=int, default=10000)
-    parser.add_argument('--external', action='store_true')
-    parser.add_argument('--no_cuda', action='store_true')
+    parser = argparse.ArgumentParser(description="dims")
+    parser.add_argument("--save-dir", type=str, required=True)
+    parser.add_argument("--data-folder", type=str, default="bedroom_6x6")
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--num-examples", type=int, default=10000)
+    parser.add_argument("--external", action="store_true")
+    parser.add_argument("--no_cuda", action="store_true")
+    parser.add_argument("--split", required=True)
     args = parser.parse_args()
     # outdir = f'./output/{args.save_dir}'
     outdir = args.save_dir
     utils.ensuredir(outdir)
 
-
     if args.external:
-        from src.object.config import object_types,  object_types_map_reverse
+        from src.object.config import object_types, object_types_map_reverse
         from src.config import grid_size
+
         num_categories = len(object_types) - 1
         num_input_channels = num_categories + 7
         img_size = grid_size
@@ -262,22 +273,25 @@ if __name__ == '__main__':
         img_size = 64
         data_folder = args.data_folder
         data_root_dir = utils.get_data_root_dir()
-        with open(f"{data_root_dir}/{data_folder}/final_categories_frequency", "r") as f:
-                lines = f.readlines()
-                cats = [line.split()[0] for line in lines]
-        categories = [cat for cat in cats if cat not in set(['window', 'door'])]
+        with open(
+            f"{data_root_dir}/{data_folder}/final_categories_frequency", "r"
+        ) as f:
+            lines = f.readlines()
+            cats = [line.split()[0] for line in lines]
+        categories = [cat for cat in cats if cat not in set(["window", "door"])]
         num_categories = len(categories)
-        num_input_channels = num_categories+8
+        num_input_channels = num_categories + 8
 
     nc = num_categories
 
-    logfile = open(f"{outdir}/log_dims.txt", 'w')
+    logfile = open(f"{outdir}/log_dims.txt", "w")
+
     def LOG(msg):
         print(msg)
-        logfile.write(msg + '\n')
+        logfile.write(msg + "\n")
         logfile.flush()
 
-    LOG('Building model...')
+    LOG("Building model...")
     model = Model(latent_size, hidden_size, num_input_channels, nocuda=args.no_cuda)
     if not args.no_cuda:
         model = model.cuda()
@@ -293,25 +307,29 @@ if __name__ == '__main__':
         np.random.shuffle(indices)
         train_indices = indices[:num_train]
         val_indices = indices[num_train:]
-        dataset = utils.get_scene_orient_dims_dataset(data_filepath / args.dataset, train_indices)
+        dataset = utils.get_scene_orient_dims_dataset(
+            data_filepath / args.dataset, train_indices
+        )
         dataset.prepare_same_category_batches(batch_size)
-        valid_dataset = utils.get_scene_orient_dims_dataset(data_filepath / args.dataset, val_indices)
+        valid_dataset = utils.get_scene_orient_dims_dataset(
+            data_filepath / args.dataset, val_indices
+        )
         valid_dataset.prepare_same_category_batches(batch_size)
     else:
         LOG("Buliding dataset...")
         dataset = LatentDataset(
-            data_folder = data_folder,
-            scene_indices = (0, dataset_size),
-            use_same_category_batches = True,
+            data_folder=data_folder,
+            scene_indices=(0, dataset_size),
+            use_same_category_batches=True,
         )
         # Put this here right away in case the creation of the data loader reads and
         #    caches the length of the dataset
         dataset.prepare_same_category_batches(batch_size)
 
         valid_dataset = LatentDataset(
-            data_folder = data_folder,
-            scene_indices = (dataset_size, dataset_size+160),
-            use_same_category_batches = True
+            data_folder=data_folder,
+            scene_indices=(dataset_size, dataset_size + 160),
+            use_same_category_batches=True,
             # seed = 42
         )
         valid_dataset.prepare_same_category_batches(batch_size)
@@ -319,31 +337,30 @@ if __name__ == '__main__':
     # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
     #    only one category in it
     data_loader = data.DataLoader(
-        dataset,
-        batch_size = batch_size,
-        num_workers = 6,
-        shuffle = False
+        dataset, batch_size=batch_size, num_workers=6, shuffle=False
     )
 
     valid_loader = data.DataLoader(
-        valid_dataset,
-        batch_size = batch_size,
-        num_workers = 6,
-        shuffle = False
+        valid_dataset, batch_size=batch_size, num_workers=6, shuffle=False
     )
 
     test_dataset = valid_dataset
     test_loader = data.DataLoader(
-        valid_dataset,
-        batch_size = batch_size,
-        num_workers = 1,
-        shuffle = False
+        valid_dataset, batch_size=batch_size, num_workers=1, shuffle=False
     )
 
     def train(e):
         dataset.prepare_same_category_batches(batch_size)
-        LOG(f'========================= EPOCH {e} =========================')
-        for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(data_loader):
+        LOG(f"========================= EPOCH {e} =========================")
+        for i, (
+            input_img,
+            output_mask,
+            t_cat,
+            t_loc,
+            t_orient,
+            t_dims,
+            catcount,
+        ) in enumerate(data_loader):
             input_img = input_img.float()
             t_loc = t_loc.float()
             t_orient = t_orient.float()
@@ -352,34 +369,56 @@ if __name__ == '__main__':
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
-            assert((t_cat == t_cat_0).all())
+            assert (t_cat == t_cat_0).all()
             t_cat = t_cat_0.item()
 
             actual_batch_size = input_img.shape[0]
 
             if use_jitter:
-                t_loc += torch.randn(actual_batch_size, 2)*jitter_loc_stdev
+                t_loc += torch.randn(actual_batch_size, 2) * jitter_loc_stdev
                 shsn = should_snap(t_orient)
-                t_orient = torch.where(shsn == torch.zeros_like(shsn), F.normalize(t_orient + torch.randn(actual_batch_size, 2)*jitter_orient_stdev), t_orient)
+                t_orient = torch.where(
+                    shsn == torch.zeros_like(shsn),
+                    F.normalize(
+                        t_orient
+                        + torch.randn(actual_batch_size, 2) * jitter_orient_stdev
+                    ),
+                    t_orient,
+                )
 
             if not args.no_cuda:
-                input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
-            input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda)
-            t_loc, t_orient = default_loc_orient(actual_batch_size, no_cuda=args.no_cuda)
+                input_img, t_loc, t_orient, t_dims = (
+                    input_img.cuda(),
+                    t_loc.cuda(),
+                    t_orient.cuda(),
+                    t_dims.cuda(),
+                )
+            input_img = inverse_xform_img(
+                input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda
+            )
+            t_loc, t_orient = default_loc_orient(
+                actual_batch_size, no_cuda=args.no_cuda
+            )
 
             real_sdf = render_obb_sdf((img_size, img_size), t_dims, t_loc, t_orient)
 
             # Update D
             d_loss = 0.0
-            model.set_requires_grad('D', t_cat)
+            model.set_requires_grad("D", t_cat)
             optimizers.d_optimizer(t_cat).zero_grad()
             noise = torch.randn(actual_batch_size, latent_size)
             if not args.no_cuda:
                 noise = noise.cuda()
             fake_dims = model.generate(noise, input_img, t_cat).detach()
-            d_out_fake = model.discriminate(render_obb_sdf((img_size, img_size), fake_dims, t_loc, t_orient), input_img, t_cat)
+            d_out_fake = model.discriminate(
+                render_obb_sdf((img_size, img_size), fake_dims, t_loc, t_orient),
+                input_img,
+                t_cat,
+            )
             d_out_real = model.discriminate(real_sdf, input_img, t_cat)
-            d_loss = 0.5 * torch.mean(-torch.log(d_out_real) - torch.log(1.0 - d_out_fake))
+            d_loss = 0.5 * torch.mean(
+                -torch.log(d_out_real) - torch.log(1.0 - d_out_fake)
+            )
             # for j in range(len(d_out_fake)):
             #     d_out_fake_j = d_out_fake[j]
             #     d_out_real_j = d_out_real[j]
@@ -390,13 +429,17 @@ if __name__ == '__main__':
 
             # Update G
             g_loss = 0.0
-            model.set_requires_grad('G', t_cat)
+            model.set_requires_grad("G", t_cat)
             optimizers.g_optimizer(t_cat).zero_grad()
             noise = torch.randn(actual_batch_size, latent_size)
             if not args.no_cuda:
                 noise = noise.cuda()
             fake_dims = model.generate(noise, input_img, t_cat)
-            d_out_fake = model.discriminate(render_obb_sdf((img_size, img_size), fake_dims, t_loc, t_orient), input_img, t_cat)
+            d_out_fake = model.discriminate(
+                render_obb_sdf((img_size, img_size), fake_dims, t_loc, t_orient),
+                input_img,
+                t_cat,
+            )
             g_loss = torch.mean(-torch.log(d_out_fake))
             # for j in range(len(d_out_fake)):
             #     d_out_fake_j = d_out_fake[j]
@@ -408,7 +451,7 @@ if __name__ == '__main__':
             # Update E + G (VAE step)
             recon_loss = 0.0
             kld_loss = 0.0
-            model.set_requires_grad('VAE', t_cat)
+            model.set_requires_grad("VAE", t_cat)
             optimizers.g_optimizer(t_cat).zero_grad()
             optimizers.e_optimizer(t_cat).zero_grad()
             mu, logvar = model.encode(real_sdf, input_img, t_cat)
@@ -423,21 +466,31 @@ if __name__ == '__main__':
 
             if i % log_every == 0:
                 catname = categories[t_cat]
-                LOG(f'Batch {i}: cat: {catname} | D: {d_loss:4.4} | G: {g_loss:4.4} | Recon: {recon_loss:4.4} | KLD: {kld_loss:4.4}')
+                LOG(
+                    f"Batch {i}: cat: {catname} | D: {d_loss:4.4} | G: {g_loss:4.4} | Recon: {recon_loss:4.4} | KLD: {kld_loss:4.4}"
+                )
         if e % save_every == 0:
             # validate()
-            model.save(f'{outdir}/model_dims_{e}.pt')
-            optimizers.save(f'{outdir}/opt_dims_{e}.pt')
+            model.save(f"{outdir}/model_dims_{e}.pt")
+            optimizers.save(f"{outdir}/opt_dims_{e}.pt")
 
     def validate():
-        LOG('Validating')
+        LOG("Validating")
         model.eval()
         total_recon_loss = 0.0
         total_kl_loss = 0.0
         num_batches = 0
 
         valid_dataset.prepare_same_category_batches(batch_size)
-        for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(valid_loader):
+        for i, (
+            input_img,
+            output_mask,
+            t_cat,
+            t_loc,
+            t_orient,
+            t_dims,
+            catcount,
+        ) in enumerate(valid_loader):
             input_img = input_img.float()
             t_loc = t_loc.float()
             t_orient = t_orient.float()
@@ -446,21 +499,37 @@ if __name__ == '__main__':
             t_cat = torch.squeeze(t_cat)
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
-            assert((t_cat == t_cat_0).all())
+            assert (t_cat == t_cat_0).all()
             t_cat = t_cat_0.item()
 
             actual_batch_size = input_img.shape[0]
 
             if use_jitter:
-                t_loc += torch.randn(actual_batch_size, 2)*jitter_loc_stdev
+                t_loc += torch.randn(actual_batch_size, 2) * jitter_loc_stdev
                 shsn = should_snap(t_orient)
-                t_orient = torch.where(shsn == torch.zeros_like(shsn), F.normalize(t_orient + torch.randn(actual_batch_size, 2)*jitter_orient_stdev), t_orient)
+                t_orient = torch.where(
+                    shsn == torch.zeros_like(shsn),
+                    F.normalize(
+                        t_orient
+                        + torch.randn(actual_batch_size, 2) * jitter_orient_stdev
+                    ),
+                    t_orient,
+                )
 
             if not args.no_cuda:
-                input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
+                input_img, t_loc, t_orient, t_dims = (
+                    input_img.cuda(),
+                    t_loc.cuda(),
+                    t_orient.cuda(),
+                    t_dims.cuda(),
+                )
 
-            input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda)
-            t_loc, t_orient = default_loc_orient(actual_batch_size, no_cuda=args.no_cuda)
+            input_img = inverse_xform_img(
+                input_img, t_loc, t_orient, img_size, no_cuda=args.no_cuda
+            )
+            t_loc, t_orient = default_loc_orient(
+                actual_batch_size, no_cuda=args.no_cuda
+            )
 
             real_sdf = render_obb_sdf((img_size, img_size), t_dims, t_loc, t_orient)
 
@@ -479,36 +548,49 @@ if __name__ == '__main__':
 
         avg_recon_loss = total_recon_loss / num_batches
         avg_kl_loss = total_kl_loss / num_batches
-        LOG(f'Recon: {avg_recon_loss:4.4} | KLD: {avg_kl_loss:4.4}')
+        LOG(f"Recon: {avg_recon_loss:4.4} | KLD: {avg_kl_loss:4.4}")
         model.train()
 
     for e in range(num_epochs):
         train(e)
 
-    print('FINISHED TRAINING; NOW GENERATING TEST RESULTS...')
+    print("FINISHED TRAINING; NOW GENERATING TEST RESULTS...")
     model.eval()
     if num_epochs == 0:
-        model.load(f'{outdir}/model_{which_to_load}.pt')
+        model.load(f"{outdir}/model_{which_to_load}.pt")
 
-    os.system(f'rm -f {outdir}/*.png')
+    os.system(f"rm -f {outdir}/*.png")
 
     test_num_to_gen = 32
     test_dataset.prepare_same_category_batches(batch_size)
-    for i, (input_img, output_mask, t_cat, t_loc, t_orient, t_dims, catcount) in enumerate(test_loader):
+    for i, (
+        input_img,
+        output_mask,
+        t_cat,
+        t_loc,
+        t_orient,
+        t_dims,
+        catcount,
+    ) in enumerate(test_loader):
         # DataLoader sometimes throws an error if the program terminates before iteration over all
         #    data is complete. So, rather than break after N iterations, we do all the iterations
         #    but only do actual work on the first N
         if i < test_num_to_gen:
-            print(f'    Generating result {i}/{test_num_to_gen}...')
+            print(f"    Generating result {i}/{test_num_to_gen}...")
             t_cat = torch.squeeze(t_cat)
 
             # Verify that we've got only one category in this batch
             t_cat_0 = t_cat[0]
-            assert((t_cat == t_cat_0).all())
+            assert (t_cat == t_cat_0).all()
             t_cat = t_cat_0.item()
 
             actual_batch_size = input_img.shape[0]
-            input_img, t_loc, t_orient, t_dims = input_img.cuda(), t_loc.cuda(), t_orient.cuda(), t_dims.cuda()
+            input_img, t_loc, t_orient, t_dims = (
+                input_img.cuda(),
+                t_loc.cuda(),
+                t_orient.cuda(),
+                t_dims.cuda(),
+            )
             input_img = inverse_xform_img(input_img, t_loc, t_orient, img_size)
             t_loc, t_orient = default_loc_orient(actual_batch_size)
             noise = torch.randn(actual_batch_size, latent_size)
@@ -526,7 +608,11 @@ if __name__ == '__main__':
             r_chan = composite[:, 0, :, :]
             g_chan = composite[:, 1, :, :]
             b_chan = composite[:, 2, :, :]
-            g_chan = torch.where(fake_mask | real_mask, torch.zeros_like(fake_mask | real_mask).float(), walls)
+            g_chan = torch.where(
+                fake_mask | real_mask,
+                torch.zeros_like(fake_mask | real_mask).float(),
+                walls,
+            )
             r_chan = real_mask.float()
             b_chan = fake_mask.float()
             composite[:, 0, :, :] = r_chan
@@ -535,6 +621,6 @@ if __name__ == '__main__':
 
             img = torchvision.transforms.ToPILImage()(composite[0])
             catname = categories[t_cat]
-            img.save(f'{outdir}/{i}_{catname}.png')
+            img.save(f"{outdir}/{i}_{catname}.png")
         elif i == test_num_to_gen:
-            print('DONE WITH RESULTS')
+            print("DONE WITH RESULTS")

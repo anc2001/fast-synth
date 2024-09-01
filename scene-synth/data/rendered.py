@@ -5,6 +5,7 @@ along with other precomputed information,
 and creates RenderedComposite, which combines those to 
 create the multi-channel top-down view used in the pipeline
 """
+
 from torch.utils import data
 from data import ObjectCategories, House, Obj
 import random
@@ -18,7 +19,7 @@ import torch
 import utils
 
 
-class RenderedScene():
+class RenderedScene:
     """
     Loading a rendered room
     Attributes
@@ -31,13 +32,22 @@ class RenderedScene():
     current_data_dir (string): keep track of the current data directory, if
         it changes, then categories and cat_to_index should be recomputed
     """
+
     category_map = ObjectCategories()
     categories = None
     cat_to_index = None
     current_data_dir = None
 
-    def __init__(self, index, data_dir, data_root_dir=None, \
-                 shuffle=True, load_objects=True, seed=None, rotation=0):
+    def __init__(
+        self,
+        index,
+        data_dir,
+        data_root_dir=None,
+        shuffle=True,
+        load_objects=True,
+        seed=None,
+        rotation=0,
+    ):
         """
         Load a rendered scene from file
         Parameters
@@ -59,17 +69,27 @@ class RenderedScene():
 
         if not data_root_dir:
             data_root_dir = utils.get_data_root_dir()
-        
-        if RenderedScene.categories is None or RenderedScene.current_data_dir != data_dir:
-            with open(f"{data_root_dir}/{data_dir}/final_categories_frequency", "r") as f:
+
+        if (
+            RenderedScene.categories is None
+            or RenderedScene.current_data_dir != data_dir
+        ):
+            with open(
+                f"{data_root_dir}/{data_dir}/final_categories_frequency", "r"
+            ) as f:
                 lines = f.readlines()
                 cats = [line.split()[0] for line in lines]
 
-            RenderedScene.categories = [cat for cat in cats if cat not in set(['window', 'door'])]
-            RenderedScene.cat_to_index = {RenderedScene.categories[i]:i for i in range(len(RenderedScene.categories))}
+            RenderedScene.categories = [
+                cat for cat in cats if cat not in set(["window", "door"])
+            ]
+            RenderedScene.cat_to_index = {
+                RenderedScene.categories[i]: i
+                for i in range(len(RenderedScene.categories))
+            }
             RenderedScene.current_data_dir = data_dir
-        
-        #print(index, rotation)
+
+        # print(index, rotation)
         if rotation != 0:
             fname = f"{index}_{rotation}"
         else:
@@ -91,42 +111,46 @@ class RenderedScene():
             elif load_objects:
                 node["category"] = RenderedScene.cat_to_index[category]
                 self.object_nodes.append(node)
-        
+
         if shuffle:
             random.shuffle(self.object_nodes)
 
         self.size = self.floor.shape[0]
-       
+
     def create_composite(self):
         """
         Create a initial composite that only contains the floor,
         wall, doors and windows. See RenderedComposite for how
         to add more objects
         """
-        r = RenderedComposite(RenderedScene.categories, self.floor, self.wall, self.door_window_nodes)
+        r = RenderedComposite(
+            RenderedScene.categories, self.floor, self.wall, self.door_window_nodes
+        )
         return r
 
-class RenderedComposite():
+
+class RenderedComposite:
     """
     Multi-channel top-down composite, used as input to NN
     """
+
     def __init__(self, categories, floor, wall, door_window_nodes=None):
-        #Optional door_window just in case
+        # Optional door_window just in case
         self.size = floor.shape[0]
-        
+
         self.categories = categories
-        
-        self.room_mask = (floor + wall)
+
+        self.room_mask = floor + wall
         self.room_mask[self.room_mask != 0] = 1
-        
+
         self.wall_mask = wall.clone()
         self.wall_mask[self.wall_mask != 0] = 0.5
-        
-        self.height_map = torch.max(floor, wall)
-        self.cat_map = torch.zeros((len(self.categories),self.size,self.size))
 
-        self.sin_map = torch.zeros((self.size,self.size))
-        self.cos_map = torch.zeros((self.size,self.size))
+        self.height_map = torch.max(floor, wall)
+        self.cat_map = torch.zeros((len(self.categories), self.size, self.size))
+
+        self.sin_map = torch.zeros((self.size, self.size))
+        self.cos_map = torch.zeros((self.size, self.size))
 
         self.door_map = torch.zeros((self.size, self.size))
         self.window_map = torch.zeros((self.size, self.size))
@@ -137,21 +161,25 @@ class RenderedComposite():
                 xsize, ysize = h.size()
                 xmin = math.floor(node["bbox_min"][0])
                 ymin = math.floor(node["bbox_min"][2])
-                if xmin < 0: xmin = 0
-                if ymin < 0: ymin = 0
-                if xsize==256: xmin = 0
-                if ysize==256: ymin = 0
+                if xmin < 0:
+                    xmin = 0
+                if ymin < 0:
+                    ymin = 0
+                if xsize == 256:
+                    xmin = 0
+                if ysize == 256:
+                    ymin = 0
                 to_add = torch.zeros((self.size, self.size))
-                to_add[xmin:xmin+xsize,ymin:ymin+ysize] = h
+                to_add[xmin : xmin + xsize, ymin : ymin + ysize] = h
                 update = to_add > self.height_map
                 self.height_map[update] = to_add[update]
-                self.wall_mask[to_add>0] = 1
-                to_add[to_add>0] = 0.5
+                self.wall_mask[to_add > 0] = 1
+                to_add[to_add > 0] = 0.5
                 if node["category"] == "door":
                     self.door_map = self.door_map + to_add
                 else:
                     self.window_map = self.window_map + to_add
-    
+
     def get_transformation(self, transform):
         """
         Bad naming, really just getting the sin and cos of the
@@ -159,19 +187,19 @@ class RenderedComposite():
         """
         a = transform[0]
         b = transform[8]
-        scale = (a**2+b**2)**0.5
-        return (b/scale, a/scale)
+        scale = (a**2 + b**2) ** 0.5
+        return (b / scale, a / scale)
 
     def add_height_map(self, to_add, category, sin, cos):
         """
-        Add a new object to the composite. 
+        Add a new object to the composite.
         Height map, category, and angle of rotation are
         all the information required.
         """
-        update = to_add>self.height_map
+        update = to_add > self.height_map
         self.height_map[update] = to_add[update]
         mask = torch.zeros(to_add.size())
-        mask[to_add>0] = 0.5
+        mask[to_add > 0] = 0.5
         self.cat_map[category] = self.cat_map[category] + mask
         self.sin_map[update] = (sin + 1) / 2
         self.cos_map[update] = (cos + 1) / 2
@@ -191,10 +219,12 @@ class RenderedComposite():
             xmin = 0
         if ymin < 0:
             ymin = 0
-        if xsize==256: xmin = 0
-        if ysize==256: ymin = 0
+        if xsize == 256:
+            xmin = 0
+        if ysize == 256:
+            ymin = 0
         to_add = torch.zeros((self.size, self.size))
-        to_add[xmin:xmin+xsize,ymin:ymin+ysize] = h
+        to_add[xmin : xmin + xsize, ymin : ymin + ysize] = h
         sin, cos = self.get_transformation(node["transform"])
         self.add_height_map(to_add, category, sin, cos)
 
@@ -220,18 +250,20 @@ class RenderedComposite():
         #     print(h.shape)
         #     print(f'{xmin}, {ymin}')
         # #####
-        to_add[xmin:xmin+xsize,ymin:ymin+ysize] = h
+        to_add[xmin : xmin + xsize, ymin : ymin + ysize] = h
         sin, cos = self.get_transformation(node["transform"])
         self.add_height_map(to_add, category, sin, cos)
+
     def add_nodes_obb(self, nodes):
         for node in nodes:
             self.add_node_obb(node)
-    
+
     def get_cat_map(self):
         return self.cat_map.clone()
 
-    def add_and_get_composite(self, to_add, category, sin, cos, \
-                              num_extra_channels=1, temporary=True):
+    def add_and_get_composite(
+        self, to_add, category, sin, cos, num_extra_channels=1, temporary=True
+    ):
         """
         Sometimes we need to create a composite to test
         if some objects should be added, without actually
@@ -240,10 +272,12 @@ class RenderedComposite():
         """
         if not temporary:
             raise NotImplementedError
-        update = to_add>self.height_map
+        update = to_add > self.height_map
         mask = torch.zeros(to_add.size())
-        mask[to_add>0] = 0.5
-        composite = torch.zeros((len(self.categories)+num_extra_channels+8, self.size, self.size))
+        mask[to_add > 0] = 0.5
+        composite = torch.zeros(
+            (len(self.categories) + num_extra_channels + 8, self.size, self.size)
+        )
         composite[0] = self.room_mask
         composite[1] = self.wall_mask
         composite[2] = self.cat_map.sum(0) + mask
@@ -256,11 +290,10 @@ class RenderedComposite():
         composite[6] = self.door_map
         composite[7] = self.window_map
         for i in range(len(self.categories)):
-            composite[i+8] = self.cat_map[i]
-        composite[8+category] += mask
-        
-        return composite
+            composite[i + 8] = self.cat_map[i]
+        composite[8 + category] += mask
 
+        return composite
 
     def get_composite(self, num_extra_channels=1, ablation=None):
         """
@@ -277,13 +310,15 @@ class RenderedComposite():
             -8~8+C: single category channel for all other categories
         Parameters
         ----------
-        num_extra_channels (int, optional): number of extra empty 
+        num_extra_channels (int, optional): number of extra empty
             channels at the end. 1 for most tasks, 0 for should continue
         ablation (string or None, optional): if set, return a subset of all
             the channels for ablation study, see the paper for more details
         """
         if ablation is None:
-            composite = torch.zeros((len(self.categories)+num_extra_channels+8, self.size, self.size))
+            composite = torch.zeros(
+                (len(self.categories) + num_extra_channels + 8, self.size, self.size)
+            )
             composite[0] = self.room_mask
             composite[1] = self.wall_mask
             composite[2] = self.cat_map.sum(0)
@@ -293,12 +328,12 @@ class RenderedComposite():
             composite[6] = self.door_map
             composite[7] = self.window_map
             for i in range(len(self.categories)):
-                composite[i+8] = self.cat_map[i]
+                composite[i + 8] = self.cat_map[i]
         elif ablation == "depth":
-            composite = torch.zeros((1+num_extra_channels, self.size, self.size))
+            composite = torch.zeros((1 + num_extra_channels, self.size, self.size))
             composite[0] = self.height_map
         elif ablation == "basic":
-            composite = torch.zeros((6+num_extra_channels, self.size, self.size))
+            composite = torch.zeros((6 + num_extra_channels, self.size, self.size))
             composite[0] = self.room_mask
             composite[1] = self.wall_mask
             composite[2] = self.cat_map.sum(0)
@@ -314,15 +349,15 @@ class RenderedComposite():
 if __name__ == "__main__":
     from . import ProjectionGenerator
     import scipy.misc as m
+
     pgen = ProjectionGenerator()
     a = RenderedScene(5, load_objects=True, data_dir="dining_final")
     c = a.create_composite()
 
     for node in a.object_nodes:
         c.add_node(node)
-    
+
     img = c.get_composite()
     img = img[7].numpy()
     img = m.toimage(img, cmin=0, cmax=1)
     img.show()
-

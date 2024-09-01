@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 batch_size = 16
 latent_dim = 200
-epoch_size = 10000 
+epoch_size = 10000
 
 
 # -------------------------- -------------------------------------------------------------
@@ -29,7 +29,7 @@ class NextCategory(nn.Module):
         self.cat_prior_img = nn.Sequential(
             resnet18(num_input_channels=n_input_channels, num_classes=bottleneck_size),
             nn.BatchNorm1d(bottleneck_size),
-            activation
+            activation,
         )
         self.cat_prior_counts = nn.Sequential(
             nn.Linear(n_categories, bottleneck_size),
@@ -37,14 +37,14 @@ class NextCategory(nn.Module):
             activation,
             nn.Linear(bottleneck_size, bottleneck_size),
             nn.BatchNorm1d(bottleneck_size),
-            activation
+            activation,
         )
         self.cat_prior_final = nn.Sequential(
-            nn.Linear(2*bottleneck_size, bottleneck_size),
+            nn.Linear(2 * bottleneck_size, bottleneck_size),
             nn.BatchNorm1d(bottleneck_size),
             activation,
             # +1 -> the 'stop' category
-            nn.Linear(bottleneck_size, n_categories+1)
+            nn.Linear(bottleneck_size, n_categories + 1),
         )
 
     def forward(self, input_scene, catcount):
@@ -57,30 +57,33 @@ class NextCategory(nn.Module):
         logits = self.forward(input_scene, catcount)
         if temp != 1.0:
             logits = logits * temp
-        #logits[:,-1] += 1
+        # logits[:,-1] += 1
         cat = torch.distributions.Categorical(logits=logits).sample()
         if return_logits:
             return cat, logits
         else:
             return cat
+
+
 # ---------------------------------------------------------------------------------------
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """
     Module that predicts the category of the next object
     """
 
-    parser = argparse.ArgumentParser(description='cat')
-    parser.add_argument('--data-folder', type=str, default="bedroom_6x6", metavar='S')
-    parser.add_argument('--num-workers', type=int, default=6, metavar='N')
-    parser.add_argument('--last-epoch', type=int, default=-1, metavar='N')
-    parser.add_argument('--num-epochs', type=int, default=5)
-    parser.add_argument('--train-size', type=int, default=5000, metavar='N')
-    parser.add_argument('--save-dir', type=str, default="cat_test", metavar='S')
-    parser.add_argument('--save-every-n-epochs', type=int, default=5, metavar='N')
-    parser.add_argument('--lr', type=float, default=0.0005, metavar='N')
-    parser.add_argument('--dataset', type=str, default="grammar")
-    parser.add_argument('--external', action='store_true')
+    parser = argparse.ArgumentParser(description="cat")
+    parser.add_argument("--data-folder", type=str, default="bedroom_6x6", metavar="S")
+    parser.add_argument("--num-workers", type=int, default=6, metavar="N")
+    parser.add_argument("--last-epoch", type=int, default=-1, metavar="N")
+    parser.add_argument("--num-epochs", type=int, default=5)
+    parser.add_argument("--train-size", type=int, default=5000, metavar="N")
+    parser.add_argument("--save-dir", type=str, default="cat_test", metavar="S")
+    parser.add_argument("--save-every-n-epochs", type=int, default=5, metavar="N")
+    parser.add_argument("--lr", type=float, default=0.0005, metavar="N")
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--external", action="store_true")
+    parser.add_argument("--split", type=str, required=True)
     args = parser.parse_args()
 
     save_dir = args.save_dir
@@ -89,73 +92,76 @@ if __name__ == '__main__':
 
     if args.external:
         from src.object.config import object_types
+
         num_categories = len(object_types)
         num_input_channels = num_categories + 6
     else:
         data_root_dir = utils.get_data_root_dir()
-        with open(f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r") as f:
+        with open(
+            f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r"
+        ) as f:
             lines = f.readlines()
-        num_categories = len(lines)-2  # -2 for 'window' and 'door'
+        num_categories = len(lines) - 2  # -2 for 'window' and 'door'
 
-        num_input_channels = num_categories+8
+        num_input_channels = num_categories + 8
 
-    logfile = open(f"{save_dir}/log.txt", 'w')
+    logfile = open(f"{save_dir}/log.txt", "w")
+
     def LOG(msg):
         print(msg)
-        logfile.write(msg + '\n')
+        logfile.write(msg + "\n")
         logfile.flush()
 
-    LOG(f'Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim')
+    LOG(
+        f"Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim"
+    )
     model = NextCategory(num_input_channels, num_categories, latent_dim)
     if torch.cuda.is_available():
         model = model.cuda()
 
-    LOG('Building datasets...')
+    LOG("Building datasets...")
 
     if args.external:
         from src.config import data_filepath
-        scene_dataset = utils.get_scene_category_dataset(data_filepath / args.dataset)
+
+        scene_dataset = utils.get_scene_category_dataset(
+            data_filepath / args.dataset, args.split
+        )
         # Define the sizes of your splits. For example, 80% train, 20% validation
         total_size = len(scene_dataset)
         train_size = int(0.8 * total_size)
         validation_size = total_size - train_size
 
         # Split the dataset
-        train_dataset, validation_dataset = random_split(scene_dataset, [train_size, validation_size])
+        train_dataset, validation_dataset = random_split(
+            scene_dataset, [train_size, validation_size]
+        )
 
     else:
         train_dataset = LatentDataset(
-            data_folder = args.data_folder,
-            scene_indices = (0, args.train_size),
-            cat_only = True,
-            importance_order = True
+            data_folder=args.data_folder,
+            scene_indices=(0, args.train_size),
+            cat_only=True,
+            importance_order=True,
         )
         validation_dataset = LatentDataset(
-            data_folder = args.data_folder,
-            scene_indices = (args.train_size, args.train_size+160),
+            data_folder=args.data_folder,
+            scene_indices=(args.train_size, args.train_size + 160),
             # seed = 42,
-            cat_only = True,
-            importance_order = True
+            cat_only=True,
+            importance_order=True,
         )
         train_dataset.build_cat2scene()
 
-    LOG('Building data loader...')
+    LOG("Building data loader...")
     train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size = batch_size,
-        num_workers = args.num_workers,
-        shuffle = True
+        train_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=True
     )
     validation_loader = torch.utils.data.DataLoader(
-        validation_dataset,
-        batch_size = batch_size,
-        num_workers = 0,
-        shuffle = True
+        validation_dataset, batch_size=batch_size, num_workers=0, shuffle=True
     )
 
-    optimizer = optim.Adam(list(model.parameters()),
-        lr = args.lr
-    )
+    optimizer = optim.Adam(list(model.parameters()), lr=args.lr)
 
     if args.last_epoch < 0:
         load = False
@@ -165,7 +171,7 @@ if __name__ == '__main__':
         last_epoch = args.last_epoch
 
     if load:
-        LOG('Loading saved models...')
+        LOG("Loading saved models...")
         model.load_state_dict(torch.load(f"{save_dir}/nextcat_{last_epoch}.pt"))
         optimizer.load_state_dict(torch.load(f"{save_dir}/nextcat_optim_backup.pt"))
         starting_epoch = last_epoch + 1
@@ -174,8 +180,9 @@ if __name__ == '__main__':
     num_seen = 0
 
     model.train()
-    LOG(f'=========================== Epoch {current_epoch} ===========================')
-
+    LOG(
+        f"=========================== Epoch {current_epoch} ==========================="
+    )
 
     loss_running_avg = 0
 
@@ -188,7 +195,11 @@ if __name__ == '__main__':
             t_cat = torch.squeeze(t_cat)
 
             if torch.cuda.is_available():
-                input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+                input_img, t_cat, catcount = (
+                    input_img.cuda(),
+                    t_cat.cuda(),
+                    catcount.cuda(),
+                )
 
             optimizer.zero_grad()
             logits = model(input_img, catcount)
@@ -197,20 +208,26 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
             loss_precision = 4
-            LOG(f'Loss: {loss.cpu().data.numpy():{loss_precision}.{loss_precision}}')
+            LOG(f"Loss: {loss.cpu().data.numpy():{loss_precision}.{loss_precision}}")
 
             num_seen += batch_size
 
             if num_seen % 800 == 0:
-                LOG(f'Examples {num_seen}/{epoch_size}')
+                LOG(f"Examples {num_seen}/{epoch_size}")
             if num_seen > 0 and num_seen % epoch_size == 0:
                 # validate()
                 num_seen = 0
                 if current_epoch % save_every == 0:
-                    torch.save(model.state_dict(), f"{save_dir}/nextcat_{current_epoch}.pt")
-                    torch.save(optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt")
+                    torch.save(
+                        model.state_dict(), f"{save_dir}/nextcat_{current_epoch}.pt"
+                    )
+                    torch.save(
+                        optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt"
+                    )
 
-                    previous_checkpoint_path = Path(f"{save_dir}/nextcat_{current_epoch - save_every}.pt")
+                    previous_checkpoint_path = Path(
+                        f"{save_dir}/nextcat_{current_epoch - save_every}.pt"
+                    )
                     if previous_checkpoint_path.exists():
                         previous_checkpoint_path.unlink()
 
@@ -219,10 +236,12 @@ if __name__ == '__main__':
                     return
 
                 current_epoch += 1
-                LOG(f'=========================== Epoch {current_epoch} ===========================')
+                LOG(
+                    f"=========================== Epoch {current_epoch} ==========================="
+                )
 
     def validate():
-        LOG('Validating')
+        LOG("Validating")
         model.eval()
         total_loss = 0
         num_correct_top1 = 0
@@ -237,7 +256,11 @@ if __name__ == '__main__':
 
             # uncomment if graphics card
             if torch.cuda.is_available():
-                input_img, t_cat, catcount = input_img.cuda(), t_cat.cuda(), catcount.cuda()
+                input_img, t_cat, catcount = (
+                    input_img.cuda(),
+                    t_cat.cuda(),
+                    catcount.cuda(),
+                )
 
             with torch.no_grad():
                 logits = model(input_img, catcount)
@@ -262,9 +285,9 @@ if __name__ == '__main__':
             num_batches += 1
             num_items += input_img.shape[0]
 
-        LOG(f'Average Loss: {total_loss / num_batches}')
-        LOG(f'Top 1 Accuracy: {num_correct_top1 / num_items}')
-        LOG(f'Top 5 Accuracy: {num_correct_top5 / num_items}')
+        LOG(f"Average Loss: {total_loss / num_batches}")
+        LOG(f"Top 1 Accuracy: {num_correct_top1 / num_items}")
+        LOG(f"Top 5 Accuracy: {num_correct_top5 / num_items}")
         model.train()
 
     train()
