@@ -21,7 +21,7 @@ from dims import latent_size as dims_latent_size
 from dims import hidden_size as dims_hidden_size
 from models.utils import inverse_xform_img
 
-from utils import save_input_img_as_png
+from utils import save_input_img_as_png, get_scene_loc_dataset
 
 # These arguments are flexibly I'm not sure what they will need to be quite yet
 
@@ -83,14 +83,32 @@ def sample_dimensions(dims_model, input_img, category):
     return dims_model.generate(noise, input_img, category)
 
 
-def generate_mask(scene, query_object, loc_model, thresholds, device, debug_dir=None):
+def generate_mask(
+    scene,
+    query_object,
+    loc_model,
+    thresholds,
+    device,
+    use_size=False,
+    category_max_dims=None,
+    debug_dir=None,
+):
     if debug_dir is not None:
         debug_dir.mkdir(parents=True)
 
+    if use_size:
+        max_dims = category_max_dims[query_object.id]
+        x_dim_normalized = query_object.extent[0] / max_dims[0]
+        y_dim_normalized = query_object.extent[2] / max_dims[2]
+
+        fastsynth_input = scene.to_fastsynth_inputs(
+            use_size=use_size, dims=[x_dim_normalized, y_dim_normalized]
+        )
+    else:
+        fastsynth_input = scene.to_fastsynth_inputs()
+
     input_img = (
-        torch.tensor(scene.to_fastsynth_inputs(), dtype=torch.float32)
-        .unsqueeze(0)
-        .to(device)
+        torch.tensor(fastsynth_input, dtype=torch.float32).unsqueeze(0).to(device)
     )
 
     category = query_object.id
@@ -300,7 +318,7 @@ def load_dims_model(checkpoint_path, num_input_channels, device):
 if __name__ == "__main__":
     from src.config import data_filepath, bedroom_largest_dim, bin_width
     from src.object.config import object_types, id_to_name
-    from src.io_utils import read_data, write_data
+    from src.io_utils import read_data, write_data, load_config
     from src.utils import vector_angle_index
     from src.object import get_furniture_object_from_id
     from src.executor.validation import ensure_placement_validity
@@ -312,26 +330,26 @@ if __name__ == "__main__":
         "--save-dir", required=True, type=Path, help="save directory for models"
     )
     parser.add_argument(
-        "--output-dir", required=True, type=Path, help="where to output results"
-    )
-    parser.add_argument(
         "--mode",
         required=True,
         type=str,
         help="mode to run in, either generate_scene or generate_masks",
     )
     parser.add_argument("--num-scenes", type=int, default=25)
-    parser.add_argument("--annotated", action="store_true")
+    parser.add_argument("--use_size", action="store_true")
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--cat-name", type=str, default="nextcat_25.pt")
-    parser.add_argument("--loc-name", type=str, default="location_200.pt")
     parser.add_argument("--dims-name", type=str, default="model_dims_25.pt")
     parser.add_argument("--orient-name", type=str, default="model_orient_115.pt")
     args = parser.parse_args()
 
-    formatted_data_path = data_filepath / args.dataset / "formatted_data"
+    config = load_config(args.save_dir / "config.yaml")
+    annotated = config["annotated"]
+    dataset = config["dataset"]
+    split = config["train_split"]
+
+    formatted_data_path = data_filepath / dataset / "formatted_data"
     scenes_path = formatted_data_path / "parse.pkl"
     scenes = read_data(scenes_path)
 
@@ -339,7 +357,7 @@ if __name__ == "__main__":
     num_input_channels = num_categories + 6
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    debug_dir = args.output_dir / "debug"
+    debug_dir = args.save_dir / "debug"
     if debug_dir.exists():
         shutil.rmtree(debug_dir)
 
@@ -379,29 +397,41 @@ if __name__ == "__main__":
 
             generated_scenes.append(generated_scene)
 
-        write_data(generated_scenes, args.output_dir / "generated_scenes.pkl")
+        write_data(generated_scenes, args.save_dir / "generated_scenes.pkl")
     elif args.mode == "generate_masks":
-        loc_model = load_loc_model(
-            args.save_dir / args.loc_name, num_input_channels, num_categories, device
-        )
-
         subscenes_meta = read_data(formatted_data_path / "subscenes_meta.pkl")
-
         thresholds = np.linspace(0.1, 0.9, 9).tolist()
+        thresholds = [round(threshold, 2) for threshold in thresholds]
 
         program_data = read_data(
-            data_filepath / args.dataset / "program_data" / "program_data.pkl"
+            data_filepath / dataset / "program_data" / "program_data.pkl"
         )
-        if args.annotated:
-            annotated_mask_path = data_filepath / args.dataset / "annotated_masks"
+
+        if args.use_size:
+            train_dataset = get_scene_loc_dataset(
+                data_filepath / dataset, split=split, use_size=args.use_size
+            )
+            category_max_dims = train_dataset.category_max_dims
+            num_input_channels += 2
+        else:
+            category_max_dims = None
+
+        if annotated:
+            annotated_mask_path = data_filepath / dataset / "annotated_masks"
             indices = []
             for mask_path in annotated_mask_path.glob("*.png"):
                 global_idx = int(mask_path.stem)
                 indices.append(global_idx)
                 assert global_idx in program_data["train_indices"]
         else:
-            indices = program_data["train_indices"]
-            indices = random.sample(indices, args.num_scenes)
+            subsampled_train_indices = read_data(
+                data_filepath
+                / dataset
+                / "program_data"
+                / "subsampled_train_indices.pkl"
+            )
+            indices = subsampled_train_indices["mask_compare_indices"]
+
         data = {
             "scenes_path": str(formatted_data_path / "parse.pkl"),
             "subscenes_meta_path": str(formatted_data_path / "subscenes_meta.pkl"),
@@ -409,35 +439,49 @@ if __name__ == "__main__":
             "masks": dict(),
             "indices": indices,
         }
-        for subscene_idx in tqdm(indices):
-            if args.debug:
-                scene_debug_dir = debug_dir / f"subscene_{subscene_idx:04d}"
+
+        for checkpoint_path in args.save_dir.glob("location_*.pt"):
+            epoch = checkpoint_path.stem.split("_")[1]
+            if epoch == "optim":
+                continue
             else:
-                scene_debug_dir = None
+                epoch = int(epoch)
 
-            item = subscenes_meta[subscene_idx]
-            scene = scenes[item["scene_idx"]]
-            object_indices = item["object_indices"]
-            query_index = item["query_idx"]
-            original_scene, original_query_object = scene.subsample(
-                object_indices, query_index
+            loc_model = load_loc_model(
+                checkpoint_path, num_input_channels, num_categories, device
             )
 
-            masks = generate_mask(
-                original_scene,
-                original_query_object,
-                loc_model,
-                thresholds,
-                device,
-                debug_dir=scene_debug_dir,
-            )
+            for subscene_idx in tqdm(indices):
+                if args.debug:
+                    scene_debug_dir = debug_dir / f"subscene_{subscene_idx:04d}"
+                else:
+                    scene_debug_dir = None
 
-            to_add = dict()
-            for threshold, mask in zip(thresholds, masks):
-                rle = encode(np.asfortranarray(mask.astype(np.uint8)))
-                to_add[threshold] = rle
-            data["masks"][subscene_idx] = to_add
+                item = subscenes_meta[subscene_idx]
+                scene = scenes[item["scene_idx"]]
+                object_indices = item["object_indices"]
+                query_index = item["query_idx"]
+                original_scene, original_query_object = scene.subsample(
+                    object_indices, query_index
+                )
 
-        write_data(data, args.output_dir / "masks" / "fastsynth_masks.pkl")
+                masks = generate_mask(
+                    original_scene,
+                    original_query_object,
+                    loc_model,
+                    thresholds,
+                    device,
+                    use_size=args.use_size,
+                    category_max_dims=category_max_dims,
+                    debug_dir=scene_debug_dir,
+                )
+
+                to_add = dict()
+                for threshold, mask in zip(thresholds, masks):
+                    rle = encode(np.asfortranarray(mask.astype(np.uint8)))
+                    to_add[threshold] = rle
+                data["masks"][subscene_idx] = to_add
+
+            write_data(data, args.save_dir / "masks" / f"fastsynth_masks_{epoch}.pkl")
     else:
         print(args.mode, " not recognized")

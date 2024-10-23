@@ -85,7 +85,7 @@ def get_scene_category_dataset(dataset_path: Path, split) -> SceneDataset:
     return scene_dataset
 
 
-def get_scene_loc_dataset(dataset_path: Path, split) -> SceneDataset:
+def get_scene_loc_dataset(dataset_path, split, use_size=False) -> SceneDataset:
     program_data_path = dataset_path / "program_data" / "program_data.pkl"
     subsampled_train_indices_path = (
         dataset_path / "program_data" / "subsampled_train_indices.pkl"
@@ -95,6 +95,7 @@ def get_scene_loc_dataset(dataset_path: Path, split) -> SceneDataset:
         "fastsynth_loc",
         split=split,
         subsampled_train_indices_path=subsampled_train_indices_path,
+        use_size=use_size,
     )
     return scene_dataset
 

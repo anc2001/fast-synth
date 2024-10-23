@@ -199,6 +199,8 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--external", action="store_true")
     parser.add_argument("--split", type=str, required=True)
+    parser.add_argument("--use_size", action="store_true")
+    parser.add_argument("--save-every", type=int, default=5)
     args = parser.parse_args()
 
     save_dir = args.save_dir
@@ -209,7 +211,10 @@ if __name__ == "__main__":
         from src.object.config import object_types
 
         num_categories = len(object_types) - 1
-        num_input_channels = num_categories + 7
+        if args.use_size:
+            num_input_channels = num_categories + 9
+        else:
+            num_input_channels = num_categories + 7
     else:
         with open(f"data/{args.data_folder}/final_categories_frequency", "r") as f:
             lines = f.readlines()
@@ -243,7 +248,7 @@ if __name__ == "__main__":
         from src.config import data_filepath
 
         train_dataset = utils.get_scene_loc_dataset(
-            data_filepath / args.dataset, split=args.split
+            data_filepath / args.dataset, split=args.split, use_size=args.use_size
         )
     else:
         LOG("Building dataset...")
@@ -289,7 +294,6 @@ if __name__ == "__main__":
     def train():
         global num_seen, current_epoch
         for batch_idx, (data, target) in enumerate(train_loader):
-
             data, target = data.cuda(), target.cuda()
 
             optimizer.zero_grad()
@@ -310,19 +314,15 @@ if __name__ == "__main__":
                 LOG(
                     f"=========================== Epoch {current_epoch} ==========================="
                 )
-                # if current_epoch % 10 == 0:
-                torch.save(
-                    model.state_dict(), f"{save_dir}/location_{current_epoch}.pt"
-                )
-                torch.save(
-                    optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt"
-                )
 
-                previous_checkpoint_path = Path(
-                    f"{save_dir}/location_{current_epoch - 1}.pt"
-                )
-                if previous_checkpoint_path.exists():
-                    previous_checkpoint_path.unlink()
+                # Keep only epochs at specified intervals
+                if current_epoch % args.save_every == 0:
+                    torch.save(
+                        model.state_dict(), f"{save_dir}/location_{current_epoch}.pt"
+                    )
+                    torch.save(
+                        optimizer.state_dict(), f"{save_dir}/location_optim_backup.pt"
+                    )
 
                 if current_epoch == args.num_epochs:
                     print("training_complete")
