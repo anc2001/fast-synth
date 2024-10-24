@@ -1,0 +1,3 @@
+[submodule "threedftoolbox"]
+	path = threedftoolbox
+	url = https://github.com/anc2001/threedftoolbox.git
