@@ -4,19 +4,15 @@ from torch.utils.data import random_split
 import json
 import numpy as np
 import torch.optim as optim
-from latent_dataset import LatentDataset
 from pathlib import Path
 import torch.nn as nn
 import torch.nn.functional as F
-from models import *
 import sys
 import utils
 from tqdm import tqdm
+from models.resnet import resnet18
 
-batch_size = 16
-latent_dim = 200
-epoch_size = 10000
-
+from threedf_dataset import ThreedfDataset, get_categories_list
 
 # -------------------------- -------------------------------------------------------------
 class NextCategory(nn.Module):
@@ -73,7 +69,6 @@ if __name__ == "__main__":
     """
 
     parser = argparse.ArgumentParser(description="cat")
-    parser.add_argument("--data-folder", type=str, default="bedroom_6x6", metavar="S")
     parser.add_argument("--num-workers", type=int, default=6, metavar="N")
     parser.add_argument("--last-epoch", type=int, default=-1, metavar="N")
     parser.add_argument("--num-epochs", type=int, default=5)
@@ -81,29 +76,26 @@ if __name__ == "__main__":
     parser.add_argument("--save-dir", type=str, default="cat_test", metavar="S")
     parser.add_argument("--save-every-n-epochs", type=int, default=5, metavar="N")
     parser.add_argument("--lr", type=float, default=0.0005, metavar="N")
-    parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--external", action="store_true")
-    parser.add_argument("--split", type=str, required=True)
+
+    # This branch specific
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--epoch-size", type=int, default=10000)
+    parser.add_argument("--latent-dim", type=int, default=200)
+    parser.add_argument("--grid-size", type=int, default=256)
+
+    parser.add_argument("--room-type", type=str, required=True)
+    parser.add_argument("--bounds-file", type=str, required=True)
+    parser.add_argument("--input-dir", type=str, required=True)
     args = parser.parse_args()
+
+    batch_size = args.batch_size
+    epoch_size = args.epoch_size 
+    latent_dim = args.latent_dim
+    grid_size = args.grid_size
 
     save_dir = args.save_dir
     save_every = args.save_every_n_epochs
     utils.ensuredir(save_dir)
-
-    if args.external:
-        from src.object.config import object_types
-
-        num_categories = len(object_types)
-        num_input_channels = num_categories + 6
-    else:
-        data_root_dir = utils.get_data_root_dir()
-        with open(
-            f"{data_root_dir}/{args.data_folder}/final_categories_frequency", "r"
-        ) as f:
-            lines = f.readlines()
-        num_categories = len(lines) - 2  # -2 for 'window' and 'door'
-
-        num_input_channels = num_categories + 8
 
     logfile = open(f"{save_dir}/log.txt", "w")
 
@@ -112,46 +104,32 @@ if __name__ == "__main__":
         logfile.write(msg + "\n")
         logfile.flush()
 
+    num_categories = len(get_categories_list(args.room_type))
+    num_input_channels = num_categories + 6 
+
     LOG(
         f"Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim"
     )
+
     model = NextCategory(num_input_channels, num_categories, latent_dim)
     if torch.cuda.is_available():
         model = model.cuda()
 
     LOG("Building datasets...")
 
-    if args.external:
-        from src.config import data_filepath
+    cat_dataset = ThreedfDataset(
+        args.input_dir, "cat", args.room_type, args.bounds_file, args.grid_size
+    )
 
-        scene_dataset = utils.get_scene_category_dataset(
-            data_filepath / args.dataset, args.split
-        )
-        # Define the sizes of your splits. For example, 80% train, 20% validation
-        total_size = len(scene_dataset)
-        train_size = int(0.8 * total_size)
-        validation_size = total_size - train_size
+   # Define the sizes of your splits. For example, 80% train, 20% validation
+    total_size = len(cat_dataset)
+    train_size = int(0.8 * total_size)
+    validation_size = total_size - train_size
 
-        # Split the dataset
-        train_dataset, validation_dataset = random_split(
-            scene_dataset, [train_size, validation_size]
-        )
-
-    else:
-        train_dataset = LatentDataset(
-            data_folder=args.data_folder,
-            scene_indices=(0, args.train_size),
-            cat_only=True,
-            importance_order=True,
-        )
-        validation_dataset = LatentDataset(
-            data_folder=args.data_folder,
-            scene_indices=(args.train_size, args.train_size + 160),
-            # seed = 42,
-            cat_only=True,
-            importance_order=True,
-        )
-        train_dataset.build_cat2scene()
+    # Split the dataset
+    train_dataset, validation_dataset = random_split(
+        cat_dataset, [train_size, validation_size]
+    )
 
     LOG("Building data loader...")
     train_loader = torch.utils.data.DataLoader(

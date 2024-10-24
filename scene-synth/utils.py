@@ -15,9 +15,6 @@ import matplotlib.pyplot as plt
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.append(str(project_root))
 
-from src.data.dataset.scene_dataset import SceneDataset
-from src.io_utils import read_data
-
 
 def ensuredir(dirname):
     """Ensure a directory exists"""
@@ -68,50 +65,6 @@ def get_data_root_dir():
     else:
         root_dir = os.path.dirname(os.path.abspath(__file__))
         return f"{root_dir}/data"
-
-
-# stolen from category_prediction.py; returns category dataset or creates it if missing
-def get_scene_category_dataset(dataset_path: Path, split) -> SceneDataset:
-    program_data_path = dataset_path / "program_data" / "program_data.pkl"
-    subsampled_train_indices_path = (
-        dataset_path / "program_data" / "subsampled_train_indices.pkl"
-    )
-    scene_dataset = SceneDataset(
-        program_data_path,
-        "fastsynth_cat",
-        split=split,
-        subsampled_train_indices_path=subsampled_train_indices_path,
-    )
-    return scene_dataset
-
-
-def get_scene_loc_dataset(dataset_path, split, use_size=False) -> SceneDataset:
-    program_data_path = dataset_path / "program_data" / "program_data.pkl"
-    subsampled_train_indices_path = (
-        dataset_path / "program_data" / "subsampled_train_indices.pkl"
-    )
-    scene_dataset = SceneDataset(
-        program_data_path,
-        "fastsynth_loc",
-        split=split,
-        subsampled_train_indices_path=subsampled_train_indices_path,
-        use_size=use_size,
-    )
-    return scene_dataset
-
-
-def get_scene_orient_dims_dataset(dataset_path: Path, split) -> SceneDataset:
-    program_data_path = dataset_path / "program_data" / "program_data.pkl"
-    subsampled_train_indices_path = (
-        dataset_path / "program_data" / "subsampled_train_indices.pkl"
-    )
-    scene_dataset = SceneDataset(
-        program_data_path,
-        "fastsynth_orient_dims",
-        split=split,
-        subsampled_train_indices_path=subsampled_train_indices_path,
-    )
-    return scene_dataset
 
 
 def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
