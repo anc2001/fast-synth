@@ -6,3 +6,4 @@ pyquaternion
 scikit-learn
 scipy
 torch
+torchvision

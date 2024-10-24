@@ -4,7 +4,9 @@ import yaml
 import numpy as np
 from tqdm import tqdm
 from numba import jit
+import cv2
 import torch
+from collections import defaultdict
 
 from threedftoolbox.render.render_depth import render
 from threedftoolbox.atiss_furniture_config import \
@@ -54,11 +56,11 @@ def get_threedf_to_atiss_category(room_type):
 
 def get_categories_list(room_type):
     if room_type == "bedroom":
-        return np.unique(list(THREED_FRONT_BEDROOM_FURNITURE.values())).tolist()
+        return np.unique(list(THREED_FRONT_BEDROOM_FURNITURE.values())).tolist() + ['stop']
     elif room_type == "living_room":
-        return np.unique(list(THREED_FRONT_LIVINGROOM_FURNITURE.values())).tolist()
+        return np.unique(list(THREED_FRONT_LIVINGROOM_FURNITURE.values())).tolist() + ['stop']
     elif room_type == "library":
-        return np.unique(list(THREED_FRONT_LIBRARY_FURNITURE.values())).tolist()
+        return np.unique(list(THREED_FRONT_LIBRARY_FURNITURE.values())).tolist() + ['stop']
     else:
         raise NotImplementedError(f"{room_type} not yet implemented")
 
@@ -66,6 +68,7 @@ class ThreedfFurniture():
     def __init__(self, category_id, rotation, size, translation):
         self.id = category_id
 
+        self.extent = 2 * size
         max_bound = size
         min_bound = -size
         self.vertices = np.array(
@@ -128,10 +131,6 @@ class ThreedfScene():
         self.floor_verts = all_info["floor_verts"]
         self.floor_fs = all_info["floor_fs"]
 
-        min_bound = np.amin(self.floor_verts, axis = 0)
-        max_bound = np.amax(self.floor_verts, axis = 0)
-        floor_centroid = np.mean([min_bound, max_bound], axis=0)
-
         self.corner_pos = -np.array(
             [room_largest_dim / 2.0, 0.0, room_largest_dim / 2.0]
         )
@@ -146,40 +145,16 @@ class ThreedfScene():
 
             atiss_category = threedf_to_atiss_category[threedf_category] 
             category_id = categories.index(atiss_category)
+            if any(abs(v) > room_largest_dim / 2.0 for v in bbox["translation"]):
+                continue
+
             furniture_piece = ThreedfFurniture(
                 category_id,
                 bbox["rotation"],
                 bbox["size"],
-                bbox["translation"] - floor_centroid,
+                bbox["translation"],
             )
             self.furniture.append(furniture_piece)
-
-    # Given a floor mask, creates a binary mask of the edges of the floor
-    def get_wall_mask(self, floor_mask, wall_value=0.5):
-        # Initialize the wall mask with zeros
-        wall_mask = np.zeros_like(floor_mask)
-        # for wall in self.walls:
-        #     wall.write_to_mask(self.corner_pos, bedroom_cell_size, wall_mask)
-        # wall_mask[wall_mask.astype(bool)] = wall_value
-
-        # Get the shape of the mask
-        rows, cols = floor_mask.shape
-        # Iterate through the array, including edges
-        for row in range(rows):
-            for col in range(cols):
-                # Check if current cell is floor space
-                if floor_mask[row, col] == 1:
-                    # Check the neighbors, including edge cases
-                    if row == 0 or row == rows - 1 or col == 0 or col == cols - 1:
-                        wall_mask[row, col] = wall_value
-                    elif (
-                        floor_mask[row - 1, col] == 0
-                        or floor_mask[row + 1, col] == 0
-                        or floor_mask[row, col - 1] == 0
-                        or floor_mask[row, col + 1] == 0
-                    ):
-                        wall_mask[row, col] = wall_value
-        return wall_mask
 
     # Convert scene object into a format that fastsynth can load
     # Returns a multi channel image (from page 4; https://dritchie.github.io/pdf/deepsynth.pdf):
@@ -205,8 +180,14 @@ class ThreedfScene():
         fastsynth_input[1] = floor_mask
 
         # wall
-        wall = self.get_wall_mask(floor_mask)
-        fastsynth_input[2] = wall
+        # https://stackoverflow.com/questions/72215748/how-to-extend-mask-region-true-by-1-or-2-pixels
+        wall_mask = np.array(floor_mask)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
+        wall_mask = cv2.dilate(wall_mask, kernel, iterations = 1)
+        wall_mask[floor_mask.astype(bool)] = 0
+        wall_mask[wall_mask.astype(bool)] = 0.5
+
+        fastsynth_input[2] = wall_mask
 
         if object_indices is None:
             furniture_in_scene = self.furniture
@@ -260,10 +241,13 @@ class ThreedfDataset():
         ):
         threedf_to_atiss_category = get_threedf_to_atiss_category(room_type)
         self.categories = get_categories_list(room_type)
+        self.dataset_type = dataset_type
+        self.cat_to_idx_list = None
+        self.grid_size = grid_size
 
         with open(bounds_file_path, 'rb') as f:
             bounds = yaml.safe_load(f)
-        room_largest_dim = bounds[room_type]["largest_allowed_dim"] 
+        self.room_largest_dim = bounds[room_type]["largest_allowed_dim"] 
 
         scenes = []
         folders = list(Path(input_dir).iterdir())
@@ -275,27 +259,13 @@ class ThreedfDataset():
                 pickle_path, 
                 threedf_to_atiss_category,
                 self.categories,
-                room_largest_dim, 
+                self.room_largest_dim, 
                 grid_size
             )
-            scenes.append(scene)
+            if len(scene.furniture) > 0:
+                scenes.append(scene)
 
-        self.dataset_type = dataset_type
-        self.cat_to_idx_list = None
-        print(f"Caching data for {self.dataset_type} scene dataset")
-        if self.dataset_type in ['cat', 'loc']: 
-            self.data = scenes 
-        elif self.dataset_type == 'orient_dims':
-            assert indices is not None
-            for meta_idx in tqdm(indices):
-                item = meta[meta_idx]
-                scene = original_scenes[item['scene_idx']]
-                object_indices = item['object_indices']
-                query_index = item['query_idx']
-                new_scene, query_object = scene.subsample(object_indices, query_index)
-                self.data.append((new_scene, query_object))
-        else:
-            raise ValueError(f"{self.dataset_type} not recognized")
+        self.scenes = scenes
 
     # From LatentDataset of Fastsynth
     def prepare_same_category_batches(self, batch_size):
@@ -303,25 +273,25 @@ class ThreedfDataset():
         # This requires than length of dataset is a multiple of batch_size
         if len(self) % batch_size != 0:
             num_batches = len(self) // batch_size
-            self.data = self.data[:num_batches * batch_size]
+            self.scenes = self.scenes[:num_batches * batch_size]
 
         if self.cat_to_idx_list is None:
+            # Just build the list such that the desired category is in the scene
             self.cat_to_idx_list = defaultdict(list)
-            for idx, vals in enumerate(self.data):
-                if self.dataset_type == 'orient_dims':
-                    _, query_object = vals
-                self.cat_to_idx_list[query_object.id].append(idx)
+            for idx, scene in enumerate(self.scenes):
+                for furniture_piece in scene.furniture:
+                    self.cat_to_idx_list[furniture_piece.id].append(idx)
 
         assert(len(self) % batch_size == 0)
         num_batches = len(self) // batch_size
         self.same_category_batch_indices = []
         for _ in range(num_batches):
-            cat_index = np.random.randint(1, len(object_types))
+            cat_index = np.random.randint(len(self.categories) - 1) 
             for _ in range(batch_size):
                 self.same_category_batch_indices.append(cat_index)
 
     def __len__(self):
-        return len(self.data)
+        return len(self.scenes)
 
     def __getitem__(self, idx):
         if self.cat_to_idx_list is not None:
@@ -330,39 +300,40 @@ class ThreedfDataset():
             idx = same_cat_idx
             
         if self.dataset_type == "cat":
-            scene = self.data[idx]
-
+            scene = self.scenes[idx]
             indices = np.arange(len(scene.furniture))
-            if len(indices) == 1:
-                object_indices = []
-                query_index = 0
+            np.random.shuffle(indices)
+
+            # Want to also include choosing entire scene and predicting stop
+            num_objects = np.random.randint(low = 0, high = len(indices) + 1)
+            object_indices = indices[:num_objects]
+
+            if num_objects == len(indices):
+                t_cat_raw = self.categories.index('stop') 
             else:
-                np.random.shuffle(indices)
-                num_objects = np.random.randint(low = 0, high = len(indices) - 1)
-                object_indices = indices[:num_objects]
                 query_index = indices[num_objects]
+                t_cat_raw = scene.furniture[query_index].id
 
             input_img_raw = scene.to_fastsynth_inputs(object_indices = object_indices)
             catcount_raw = scene.get_bag_of_categories(object_indices = object_indices)
-
-            t_cat_raw = scene.furniture[query_index].id
 
             input_img = torch.tensor(input_img_raw, dtype=torch.float32)
             t_cat = torch.tensor(t_cat_raw, dtype=torch.long)
             catcount = torch.tensor(catcount_raw, dtype=torch.float32)
 
             return input_img, t_cat, catcount
-        elif self.type == 'loc':
-            scene = self.data[idx]
-
-            indices = np.arange(len(scene.objects))
+        elif self.dataset_type == 'loc':
+            scene = self.scenes[idx]
+            indices = np.arange(len(scene.furniture))
             np.random.shuffle(indices)
             num_objects = np.random.randint(low = 0, high = len(indices))
+            object_indices = indices[:num_objects]
 
             input_img_raw = scene.to_fastsynth_inputs(object_indices = object_indices)
 
             inputs = torch.tensor(input_img_raw, dtype=torch.float32)
             output = torch.zeros((int(self.grid_size / 4), int(self.grid_size / 4))).long()
+
             for object_idx in indices[num_objects:]:
                 furniture_piece = scene.furniture[object_idx]
                 coords = (furniture_piece.center - scene.corner_pos) / (scene.cell_size * 4)
@@ -372,35 +343,53 @@ class ThreedfDataset():
                 output[x_coord, y_coord] = furniture_piece.id
 
             return inputs, output
-        elif self.type == 'orient_dims':
-            scene, query_object = self.data[idx]
-            if self.cat_to_idx_list is not None:
-                assert query_object.id == cat
+        elif self.dataset_type == 'orient_dims':
+            scene = self.scenes[idx]
+
+            # The desired category is guaranteed to be in the scene
+            indices = np.arange(len(scene.furniture))
+            np.random.shuffle(indices)
+
+            query_index = None
+            for idx in indices:
+                if scene.furniture[idx].id == cat:
+                    query_index = idx
+                    break
+            assert query_index is not None
+
+            # Remove query index from list of options 
+            indices = indices[indices != query_index]
+
+            num_objects = np.random.randint(low = 0, high = len(indices) + 1)
+            object_indices = indices[:num_objects]
+            query_object = scene.furniture[query_index]
+
+            assert query_object.id == cat
 
             cat = np.array([cat])
-
-            catcount = scene.get_bag_of_categories()
-            input_img = scene.to_fastsynth_inputs()
+            catcount = scene.get_bag_of_categories(object_indices = object_indices)
+            input_img = scene.to_fastsynth_inputs(object_indices = object_indices)
 
             # Select just the object mask channel from the output image
-            output_img = np.zeros((grid_size, grid_size))
-            query_object.write_to_mask(scene.corner_pos, bedroom_cell_size, output_img)
+            output_img = query_object.rasterize_to_mask(
+                scene.corner_pos, scene.cell_size, scene.grid_size
+            )
 
             # Normalize the coordinates to [-1, 1], with (0,0) being the image center
             loc = query_object.center
-            x_loc = loc[0] / (bedroom_largest_dim / 2)
-            y_loc = loc[2] / (bedroom_largest_dim / 2)
+            x_loc = loc[0] / (self.room_largest_dim / 2)
+            y_loc = loc[2] / (self.room_largest_dim / 2)
             loc = np.array([x_loc, y_loc])
 
             # Get the orientation of the object
-            sin, cos = query_object.get_rotation()
+            sin, cos = np.sin(- query_object.rot), np.cos(- query_object.rot)
             orient = np.array([cos, sin])
 
             # Get the object-space dimensions of the output object (in pixel space)
             # (Normalize to [0, 1])
-            xsize, _, ysize = query_object.extent / (bedroom_largest_dim / 2)
+            xsize, _, ysize = query_object.extent / (self.room_largest_dim / 2)
             dims = np.array([ysize, xsize])
 
             return input_img, output_img, cat, loc, orient, dims, catcount
         else:
-            raise NotImplementedError(f"{self.type} not a recognized scene dataset")
+            raise NotImplementedError(f"{self.dataset_type} not a recognized scene dataset")

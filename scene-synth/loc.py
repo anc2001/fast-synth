@@ -5,13 +5,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
-from loc_dataset import *
 from PIL import Image
 import scipy.misc as m
 import numpy as np
 import math
 import utils
 from pathlib import Path
+
+from threedf_dataset import ThreedfDataset, get_categories_list
 
 """
 Module that predicts the location of the next object
@@ -186,7 +187,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Location Training with Auxillary Tasks"
     )
-    parser.add_argument("--data-folder", type=str, default="bedroom_6x6", metavar="S")
     parser.add_argument("--num-workers", type=int, default=6, metavar="N")
     parser.add_argument("--last-epoch", type=int, default=-10, metavar="N")
     parser.add_argument("--num-epochs", type=int, default=10)
@@ -196,31 +196,24 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=0.001, metavar="N")
     parser.add_argument("--eps", type=float, default=1e-6, metavar="N")
     parser.add_argument("--centroid-weight", type=float, default=10, metavar="N")
-    parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--external", action="store_true")
-    parser.add_argument("--split", type=str, required=True)
-    parser.add_argument("--use_size", action="store_true")
     parser.add_argument("--save-every", type=int, default=5)
+
+    # This branch specific
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--grid-size", type=int, default=256)
+
+    parser.add_argument("--room-type", type=str, required=True)
+    parser.add_argument("--bounds-file", type=str, required=True)
+    parser.add_argument("--input-dir", type=str, required=True)
+
     args = parser.parse_args()
 
     save_dir = args.save_dir
     utils.ensuredir(save_dir)
-    batch_size = 16
+    batch_size = args.batch_size
 
-    if args.external:
-        from src.object.config import object_types
-
-        num_categories = len(object_types) - 1
-        if args.use_size:
-            num_input_channels = num_categories + 9
-        else:
-            num_input_channels = num_categories + 7
-    else:
-        with open(f"data/{args.data_folder}/final_categories_frequency", "r") as f:
-            lines = f.readlines()
-        num_categories = len(lines) - 2
-
-        num_input_channels = num_categories + 8
+    num_categories = len(get_categories_list(args.room_type)) - 1
+    num_input_channels = num_categories + 7
 
     logfile = open(f"{save_dir}/log_location.txt", "w")
 
@@ -244,23 +237,13 @@ if __name__ == "__main__":
     model.cuda()
     cross_entropy.cuda()
 
-    if args.external:
-        from src.config import data_filepath
-
-        train_dataset = utils.get_scene_loc_dataset(
-            data_filepath / args.dataset, split=args.split, use_size=args.use_size
-        )
-    else:
-        LOG("Building dataset...")
-        train_dataset = LocDataset(
-            data_root_dir="data",
-            data_folder=args.data_folder,
-            scene_indices=(0, args.train_size),
-        )
+    loc_dataset = ThreedfDataset(
+        args.input_dir, "loc", args.room_type, args.bounds_file, args.grid_size
+    )
 
     LOG("Building data loader...")
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=True
+        loc_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=True
     )
 
     LOG("Building optimizer...")

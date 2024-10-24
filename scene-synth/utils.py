@@ -83,9 +83,11 @@ def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
     room_mask = input_img[img_index, 1]
     wall_mask = input_img[img_index, 2]
 
-    # Initialize an RGB image
-    from src.visualize.config import colors
-
+    colors = {
+        "outside": np.array([222, 222, 222]) / 256,
+        "inside": np.array([169, 169, 169]) / 256,
+        "wall": np.array([97, 97, 97]) / 256,
+    }
     rgb_image = np.zeros((height, width, 3))
     rgb_image[room_mask == 1] = colors["inside"]
     rgb_image[room_mask == 0] = colors["outside"]

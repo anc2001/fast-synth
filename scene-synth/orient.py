@@ -3,28 +3,23 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils import data
+from torch.utils.data import random_split
 import torch.nn.functional as F
 import torchvision
 import numpy as np
 import random
 import math
 from models.utils import *
-from latent_dataset import LatentDataset
 import utils
 import os
+from PIL import Image
+
+from threedf_dataset import ThreedfDataset, get_categories_list
+
 
 """
 Module that predicts the orientation of the next object
 """
-
-# ---------------------------------------------------------------------------------------
-img_size = 256
-latent_size = 10
-hidden_size = 40
-output_size = 2
-# ---------------------------------------------------------------------------------------
-
-
 class Model(nn.Module):
 
     def make_net_fn(self, netdict, makefn):
@@ -285,7 +280,6 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    img_size = 256
     latent_size = 10
     hidden_size = 40
     output_size = 2
@@ -295,10 +289,6 @@ if __name__ == "__main__":
     log_every = 50
     save_every = 5
 
-    # num_epochs = 50
-    # num_epochs = 0
-    num_epochs = 1000
-
     use_jitter = False
     jitter_stdev = 0.01
 
@@ -306,17 +296,24 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="orient")
     parser.add_argument("--save-dir", type=str, required=True)
-    parser.add_argument("--data-folder", type=str, default="bedroom_6x6")
-    parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--external", action="store_true")
-    parser.add_argument("--split", type=str, required=True)
     parser.add_argument("--num-examples", type=int, default=10000)
+
+    # This branch specific
+    parser.add_argument("--num-workers", type=int, default=6)
+    parser.add_argument("--grid-size", type=int, default=256)
+    parser.add_argument("--num-epochs", type=int, default=1000)
+
+    parser.add_argument("--room-type", type=str, required=True)
+    parser.add_argument("--bounds-file", type=str, required=True)
+    parser.add_argument("--input-dir", type=str, required=True)
+
     args = parser.parse_args()
     # outdir = f'./output/{args.save_dir}'
     outdir = args.save_dir
     utils.ensuredir(outdir)
+    img_size = args.grid_size
+    num_epochs = args.num_epochs
 
-    data_folder = args.data_folder
     logfile = open(f"{outdir}/log_orient.txt", "w")
 
     def LOG(msg):
@@ -324,45 +321,25 @@ if __name__ == "__main__":
         logfile.write(msg + "\n")
         logfile.flush()
 
-    if args.external:
-        from src.config import data_filepath
-        from src.object.config import object_types, object_types_map_reverse
+    categories = get_categories_list(args.room_type)
+    num_categories = len(categories) - 1
+    num_input_channels = num_categories + 7
 
-        num_categories = len(object_types) - 1
-        num_input_channels = num_categories + 7
-        categories = object_types_map_reverse
+    dataset = ThreedfDataset(
+        args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
+    )
+    valid_dataset = ThreedfDataset(
+        args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
+    )
+    # Weird workaround but fine I guess
+    indices = np.arange(len(dataset))
+    np.random.shuffle(indices)
+    train_size = int(0.8 * len(indices))
 
-        dataset = utils.get_scene_orient_dims_dataset(
-            data_filepath / args.dataset, args.split
-        )
-        valid_dataset = utils.get_scene_orient_dims_dataset(
-            data_filepath / args.dataset, "val"
-        )
-    else:
-        data_root_dir = utils.get_data_root_dir()
-        with open(
-            f"{data_root_dir}/{data_folder}/final_categories_frequency", "r"
-        ) as f:
-            lines = f.readlines()
-            cats = [line.split()[0] for line in lines]
-        categories = [cat for cat in cats if cat not in set(["window", "door"])]
-        num_categories = len(categories)
-        num_input_channels = num_categories + 8
-
-        nc = num_categories
-
-        dataset = LatentDataset(
-            data_folder=data_folder,
-            scene_indices=(0, dataset_size),
-            use_same_category_batches=True,
-        )
-
-        valid_dataset = LatentDataset(
-            data_folder=data_folder,
-            scene_indices=(dataset_size, dataset_size + 160),
-            use_same_category_batches=True,
-            # seed = 42
-        )
+    train_scenes = [dataset.scenes[idx] for idx in indices[:train_size]]
+    val_scenes = [dataset.scenes[idx] for idx in indices[train_size:]]
+    dataset.scenes = train_scenes
+    valid_dataset.scene = val_scenes
 
     # Put this here right away in case the creation of the data loader reads and
     #    caches the length of the dataset
@@ -370,12 +347,12 @@ if __name__ == "__main__":
     # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
     #    only one category in it
     data_loader = data.DataLoader(
-        dataset, batch_size=batch_size, num_workers=6, shuffle=False
+        dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=False
     )
 
     valid_dataset.prepare_same_category_batches(batch_size)
     valid_loader = data.DataLoader(
-        valid_dataset, batch_size=batch_size, num_workers=6, shuffle=False
+        valid_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=False
     )
 
     test_dataset = valid_dataset
@@ -578,7 +555,6 @@ if __name__ == "__main__":
 
     os.system(f"rm -f {outdir}/*.png")
 
-    from PIL import Image
 
     def tensor2img(x):
         return torchvision.transforms.ToPILImage()(x)

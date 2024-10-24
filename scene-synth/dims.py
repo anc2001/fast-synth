@@ -16,17 +16,11 @@ import sys
 from pathlib import Path
 from torch.utils.data import random_split
 
+from threedf_dataset import ThreedfDataset, get_categories_list
+
 """
 Module that predicts the dimension of the next object
 """
-
-# ---------------------------------------------------------------------------------------
-img_size = 64
-latent_size = 10
-hidden_size = 40
-output_size = 2
-# ---------------------------------------------------------------------------------------
-
 
 class Model(nn.Module):
 
@@ -230,17 +224,19 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # ---------------------------------------------------------------------------------------
+    img_size = 64
+    latent_size = 10
+    hidden_size = 40
+    output_size = 2
+    # ---------------------------------------------------------------------------------------
+
     latent_size = 10
     hidden_size = 40
     output_size = 2
     batch_size = 64
-    batches_per_epoch = 625
-    dataset_size = batch_size * batches_per_epoch
     log_every = 50
     save_every = 5
-
-    num_epochs = 1000
-    # num_epochs = 0
 
     which_to_load = 45
 
@@ -250,39 +246,26 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="dims")
     parser.add_argument("--save-dir", type=str, required=True)
-    parser.add_argument("--data-folder", type=str, default="bedroom_6x6")
-    parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--num-examples", type=int, default=10000)
-    parser.add_argument("--external", action="store_true")
-    parser.add_argument("--no_cuda", action="store_true")
-    parser.add_argument("--split", required=True)
+
+    # This branch specific
+    parser.add_argument("--num-workers", type=int, default=6)
+    parser.add_argument("--grid-size", type=int, default=256)
+    parser.add_argument("--num-epochs", type=int, default=1000)
+
+    parser.add_argument("--room-type", type=str, required=True)
+    parser.add_argument("--bounds-file", type=str, required=True)
+    parser.add_argument("--input-dir", type=str, required=True)
+    parser.add_argument("--no-cuda", action="store_true")
     args = parser.parse_args()
     # outdir = f'./output/{args.save_dir}'
     outdir = args.save_dir
     utils.ensuredir(outdir)
 
-    if args.external:
-        from src.object.config import object_types, object_types_map_reverse
-        from src.config import grid_size
+    num_epochs = args.num_epochs 
 
-        num_categories = len(object_types) - 1
-        num_input_channels = num_categories + 7
-        img_size = grid_size
-        categories = object_types_map_reverse
-    else:
-        img_size = 64
-        data_folder = args.data_folder
-        data_root_dir = utils.get_data_root_dir()
-        with open(
-            f"{data_root_dir}/{data_folder}/final_categories_frequency", "r"
-        ) as f:
-            lines = f.readlines()
-            cats = [line.split()[0] for line in lines]
-        categories = [cat for cat in cats if cat not in set(["window", "door"])]
-        num_categories = len(categories)
-        num_input_channels = num_categories + 8
-
-    nc = num_categories
+    categories = get_categories_list(args.room_type)
+    num_categories = len(categories) - 1
+    num_input_channels = num_categories + 7
 
     logfile = open(f"{outdir}/log_dims.txt", "w")
 
@@ -298,56 +281,42 @@ if __name__ == "__main__":
     model.train()
     optimizers = Optimizers(model=model, lr=0.0005)
 
-    if args.external:
-        from src.config import data_filepath
+    dataset = ThreedfDataset(
+        args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
+    )
+    valid_dataset = ThreedfDataset(
+        args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
+    )
+    # Weird workaround but fine I guess
+    indices = np.arange(len(dataset))
+    np.random.shuffle(indices)
+    train_size = int(0.8 * len(indices))
 
-        num_examples = args.num_examples
-        num_train = int(0.8 * num_examples)
-        indices = np.arange(num_examples)
-        np.random.shuffle(indices)
-        train_indices = indices[:num_train]
-        val_indices = indices[num_train:]
-        dataset = utils.get_scene_orient_dims_dataset(
-            data_filepath / args.dataset, train_indices
-        )
-        dataset.prepare_same_category_batches(batch_size)
-        valid_dataset = utils.get_scene_orient_dims_dataset(
-            data_filepath / args.dataset, val_indices
-        )
-        valid_dataset.prepare_same_category_batches(batch_size)
-    else:
-        LOG("Buliding dataset...")
-        dataset = LatentDataset(
-            data_folder=data_folder,
-            scene_indices=(0, dataset_size),
-            use_same_category_batches=True,
-        )
-        # Put this here right away in case the creation of the data loader reads and
-        #    caches the length of the dataset
-        dataset.prepare_same_category_batches(batch_size)
+    train_scenes = [dataset.scenes[idx] for idx in indices[:train_size]]
+    val_scenes = [dataset.scenes[idx] for idx in indices[train_size:]]
+    dataset.scenes = train_scenes
+    valid_dataset.scene = val_scenes
 
-        valid_dataset = LatentDataset(
-            data_folder=data_folder,
-            scene_indices=(dataset_size, dataset_size + 160),
-            use_same_category_batches=True,
-            # seed = 42
-        )
-        valid_dataset.prepare_same_category_batches(batch_size)
-
+    # Put this here right away in case the creation of the data loader reads and
+    #    caches the length of the dataset
+    dataset.prepare_same_category_batches(batch_size)
     # NOTE: *MUST* use shuffle = False here to guarantee that each batch has the
     #    only one category in it
     data_loader = data.DataLoader(
-        dataset, batch_size=batch_size, num_workers=6, shuffle=False
+        dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=False
     )
 
+    valid_dataset.prepare_same_category_batches(batch_size)
     valid_loader = data.DataLoader(
-        valid_dataset, batch_size=batch_size, num_workers=6, shuffle=False
+        valid_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=False
     )
 
     test_dataset = valid_dataset
     test_loader = data.DataLoader(
         valid_dataset, batch_size=batch_size, num_workers=1, shuffle=False
     )
+
+    nc = num_categories
 
     def train(e):
         dataset.prepare_same_category_batches(batch_size)

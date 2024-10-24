@@ -105,7 +105,7 @@ if __name__ == "__main__":
         logfile.flush()
 
     num_categories = len(get_categories_list(args.room_type))
-    num_input_channels = num_categories + 6 
+    num_input_channels = num_categories + 6
 
     LOG(
         f"Building model... {num_input_channels} input channels, {num_categories} categories, {latent_dim} latent dim"
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         args.input_dir, "cat", args.room_type, args.bounds_file, args.grid_size
     )
 
-   # Define the sizes of your splits. For example, 80% train, 20% validation
+    # Define the sizes of your splits. For example, 80% train, 20% validation
     total_size = len(cat_dataset)
     train_size = int(0.8 * total_size)
     validation_size = total_size - train_size
@@ -164,6 +164,11 @@ if __name__ == "__main__":
 
     loss_running_avg = 0
 
+#    from utils import save_input_img_as_png
+#    for input_img, _, _ in tqdm(train_loader):
+#        for i in range(input_img.shape[0]):
+#            save_input_img_as_png(input_img, i, save_path=f"{args.save_dir}/{i}.png")
+#
     def train():
         global num_seen, current_epoch, loss_running_avg
 
@@ -193,7 +198,7 @@ if __name__ == "__main__":
             if num_seen % 800 == 0:
                 LOG(f"Examples {num_seen}/{epoch_size}")
             if num_seen > 0 and num_seen % epoch_size == 0:
-                # validate()
+                validate()
                 num_seen = 0
                 if current_epoch % save_every == 0:
                     torch.save(
@@ -202,16 +207,9 @@ if __name__ == "__main__":
                     torch.save(
                         optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt"
                     )
-
-                    previous_checkpoint_path = Path(
-                        f"{save_dir}/nextcat_{current_epoch - save_every}.pt"
-                    )
-                    if previous_checkpoint_path.exists():
-                        previous_checkpoint_path.unlink()
-
                 if current_epoch == args.num_epochs:
                     print("training complete")
-                    return
+                    exit()
 
                 current_epoch += 1
                 LOG(
@@ -268,4 +266,5 @@ if __name__ == "__main__":
         LOG(f"Top 5 Accuracy: {num_correct_top5 / num_items}")
         model.train()
 
-    train()
+    while True:
+        train()
