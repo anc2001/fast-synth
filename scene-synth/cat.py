@@ -14,6 +14,9 @@ from models.resnet import resnet18
 
 from threedf_dataset import ThreedfDataset, get_categories_list
 
+latent_dim = 200
+
+
 # -------------------------- -------------------------------------------------------------
 class NextCategory(nn.Module):
 
@@ -80,17 +83,15 @@ if __name__ == "__main__":
     # This branch specific
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--epoch-size", type=int, default=10000)
-    parser.add_argument("--latent-dim", type=int, default=200)
-    parser.add_argument("--grid-size", type=int, default=256)
 
+    parser.add_argument("--grid-size", type=int, default=256)
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
     args = parser.parse_args()
 
     batch_size = args.batch_size
-    epoch_size = args.epoch_size 
-    latent_dim = args.latent_dim
+    epoch_size = args.epoch_size
     grid_size = args.grid_size
 
     save_dir = args.save_dir
@@ -164,11 +165,11 @@ if __name__ == "__main__":
 
     loss_running_avg = 0
 
-#    from utils import save_input_img_as_png
-#    for input_img, _, _ in tqdm(train_loader):
-#        for i in range(input_img.shape[0]):
-#            save_input_img_as_png(input_img, i, save_path=f"{args.save_dir}/{i}.png")
-#
+    #    from utils import save_input_img_as_png
+    #    for input_img, _, _ in tqdm(train_loader):
+    #        for i in range(input_img.shape[0]):
+    #            save_input_img_as_png(input_img, i, save_path=f"{args.save_dir}/{i}.png")
+    #
     def train():
         global num_seen, current_epoch, loss_running_avg
 

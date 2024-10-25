@@ -18,9 +18,17 @@ from torch.utils.data import random_split
 
 from threedf_dataset import ThreedfDataset, get_categories_list
 
+# ---------------------------------------------------------------------------------------
+latent_size = 10
+hidden_size = 40
+output_size = 2
+# ---------------------------------------------------------------------------------------
+
+
 """
 Module that predicts the dimension of the next object
 """
+
 
 class Model(nn.Module):
 
@@ -161,7 +169,7 @@ class Model(nn.Module):
         )
 
     def load(self, filename):
-        blob = torch.load(filename)
+        blob = torch.load(filename, weights_only=True)
         for cat in blob["cats_seen"]:
             _ = self.encoder(cat)
             _ = self.cond_prior(cat)
@@ -224,12 +232,6 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # ---------------------------------------------------------------------------------------
-    img_size = 64
-    latent_size = 10
-    hidden_size = 40
-    output_size = 2
-    # ---------------------------------------------------------------------------------------
 
     latent_size = 10
     hidden_size = 40
@@ -257,15 +259,18 @@ if __name__ == "__main__":
     parser.add_argument("--input-dir", type=str, required=True)
     parser.add_argument("--no-cuda", action="store_true")
     args = parser.parse_args()
+
+    img_size = args.grid_size
+
     # outdir = f'./output/{args.save_dir}'
     outdir = args.save_dir
     utils.ensuredir(outdir)
 
-    num_epochs = args.num_epochs 
+    num_epochs = args.num_epochs
 
     categories = get_categories_list(args.room_type)
-    num_categories = len(categories) - 1
-    num_input_channels = num_categories + 7
+    num_categories = len(categories)
+    num_input_channels = num_categories + 6
 
     logfile = open(f"{outdir}/log_dims.txt", "w")
 
@@ -308,15 +313,16 @@ if __name__ == "__main__":
 
     valid_dataset.prepare_same_category_batches(batch_size)
     valid_loader = data.DataLoader(
-        valid_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=False
+        valid_dataset,
+        batch_size=batch_size,
+        num_workers=args.num_workers,
+        shuffle=False,
     )
 
     test_dataset = valid_dataset
     test_loader = data.DataLoader(
         valid_dataset, batch_size=batch_size, num_workers=1, shuffle=False
     )
-
-    nc = num_categories
 
     def train(e):
         dataset.prepare_same_category_batches(batch_size)

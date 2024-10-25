@@ -16,10 +16,15 @@ from PIL import Image
 
 from threedf_dataset import ThreedfDataset, get_categories_list
 
+latent_size = 10
+hidden_size = 40
+output_size = 2
 
 """
 Module that predicts the orientation of the next object
 """
+
+
 class Model(nn.Module):
 
     def make_net_fn(self, netdict, makefn):
@@ -208,7 +213,7 @@ class Model(nn.Module):
         )
 
     def load(self, filename):
-        blob = torch.load(filename)
+        blob = torch.load(filename, weights_only=True)
         for cat in blob["cats_seen"]:
             _ = self.encoder(cat)
             _ = self.cond_prior(cat)
@@ -280,12 +285,7 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    latent_size = 10
-    hidden_size = 40
-    output_size = 2
     batch_size = 8
-    batches_per_epoch = 625
-    dataset_size = batch_size * batches_per_epoch
     log_every = 50
     save_every = 5
 
@@ -322,8 +322,8 @@ if __name__ == "__main__":
         logfile.flush()
 
     categories = get_categories_list(args.room_type)
-    num_categories = len(categories) - 1
-    num_input_channels = num_categories + 7
+    num_categories = len(categories)
+    num_input_channels = num_categories + 6
 
     dataset = ThreedfDataset(
         args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
@@ -352,7 +352,10 @@ if __name__ == "__main__":
 
     valid_dataset.prepare_same_category_batches(batch_size)
     valid_loader = data.DataLoader(
-        valid_dataset, batch_size=batch_size, num_workers=args.num_workers, shuffle=False
+        valid_dataset,
+        batch_size=batch_size,
+        num_workers=args.num_workers,
+        shuffle=False,
     )
 
     test_dataset = valid_dataset
@@ -453,7 +456,7 @@ if __name__ == "__main__":
                     f"Batch {i}: cat: {catname} | D: {d_loss:4.4} | G: {g_loss:4.4} | Recon: {recon_loss:4.4} | KLD: {kld_loss:4.4} | Snap: {s_loss:4.4}"
                 )
         if e % save_every == 0:
-            validate()
+            # validate()
             model.save(f"{outdir}/model_orient_{e}.pt")
             optimizers.save(f"{outdir}/opt_orient_{e}.pt")
 
@@ -554,7 +557,6 @@ if __name__ == "__main__":
         model.load(f"{outdir}/model_{which_to_load}.pt")
 
     os.system(f"rm -f {outdir}/*.png")
-
 
     def tensor2img(x):
         return torchvision.transforms.ToPILImage()(x)

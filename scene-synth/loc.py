@@ -156,7 +156,7 @@ class UpConvBlock(nn.Module):
         self.act = nn.LeakyReLU()
 
     def forward(self, x):
-        x = F.upsample(x, mode="nearest", scale_factor=2)
+        x = F.interpolate(x, mode="nearest", scale_factor=2)
         return self.act(self.bn(self.conv(x)))
 
 
@@ -212,8 +212,8 @@ if __name__ == "__main__":
     utils.ensuredir(save_dir)
     batch_size = args.batch_size
 
-    num_categories = len(get_categories_list(args.room_type)) - 1
-    num_input_channels = num_categories + 7
+    num_categories = len(get_categories_list(args.room_type))
+    num_input_channels = num_categories + 6
 
     logfile = open(f"{save_dir}/log_location.txt", "w")
 
@@ -223,9 +223,9 @@ if __name__ == "__main__":
         logfile.flush()
 
     LOG("Building model...")
-    model = Model(num_classes=num_categories + 1, num_input_channels=num_input_channels)
+    model = Model(num_classes=num_categories, num_input_channels=num_input_channels)
 
-    weight = [args.centroid_weight for i in range(num_categories + 1)]
+    weight = [args.centroid_weight for i in range(num_categories)]
     weight[0] = 1
     print(weight)
 
