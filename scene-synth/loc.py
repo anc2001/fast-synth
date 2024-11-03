@@ -205,6 +205,7 @@ if __name__ == "__main__":
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
+    parser.add_argument("--split-file", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -237,8 +238,18 @@ if __name__ == "__main__":
     model.cuda()
     cross_entropy.cuda()
 
+    if args.split_file is None:
+        scene_ids = None
+    else:
+        scene_ids, _ = utils.read_csv_split(args.split_file)
+
     loc_dataset = ThreedfDataset(
-        args.input_dir, "loc", args.room_type, args.bounds_file, args.grid_size
+        args.input_dir, 
+        "loc", 
+        args.room_type, 
+        args.bounds_file, 
+        args.grid_size, 
+        scene_ids = scene_ids
     )
 
     LOG("Building data loader...")

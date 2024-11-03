@@ -88,6 +88,8 @@ if __name__ == "__main__":
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
+    parser.add_argument("--split-file", type=str, default=None)
+    parser.add_argument("--use-ordering", action="store_true")
     args = parser.parse_args()
 
     batch_size = args.batch_size
@@ -118,19 +120,46 @@ if __name__ == "__main__":
 
     LOG("Building datasets...")
 
-    cat_dataset = ThreedfDataset(
-        args.input_dir, "cat", args.room_type, args.bounds_file, args.grid_size
-    )
+    if args.split_file is None:
+        cat_dataset = ThreedfDataset(
+            args.input_dir, 
+            "cat", 
+            args.room_type, 
+            args.bounds_file, 
+            args.grid_size, 
+            use_ordering=args.use_ordering
+        )
 
-    # Define the sizes of your splits. For example, 80% train, 20% validation
-    total_size = len(cat_dataset)
-    train_size = int(0.8 * total_size)
-    validation_size = total_size - train_size
+        # Define the sizes of your splits. For example, 80% train, 20% validation
+        total_size = len(cat_dataset)
+        train_size = int(0.8 * total_size)
+        validation_size = total_size - train_size
 
-    # Split the dataset
-    train_dataset, validation_dataset = random_split(
-        cat_dataset, [train_size, validation_size]
-    )
+        # Split the dataset
+        train_dataset, validation_dataset = random_split(
+            cat_dataset, [train_size, validation_size]
+        )
+    else:
+        train_ids, val_ids = utils.read_csv_split(args.split_file)
+        train_dataset = ThreedfDataset(
+            args.input_dir, 
+            "cat", 
+            args.room_type, 
+            args.bounds_file, 
+            args.grid_size, 
+            use_ordering=args.use_ordering,
+            scene_ids = train_ids
+        )
+
+        validation_dataset = ThreedfDataset(
+            args.input_dir, 
+            "cat", 
+            args.room_type, 
+            args.bounds_file, 
+            args.grid_size, 
+            use_ordering=args.use_ordering,
+            scene_ids = val_ids 
+        )
 
     LOG("Building data loader...")
     train_loader = torch.utils.data.DataLoader(

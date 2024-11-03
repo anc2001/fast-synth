@@ -85,6 +85,7 @@ class ThreedfFurniture:
     def __init__(self, category_id, rotation, size, translation):
         self.id = category_id
 
+        self.size = size
         self.extent = 2 * size
         max_bound = size
         min_bound = -size
@@ -103,14 +104,18 @@ class ThreedfFurniture:
         self.rotate(-rotation)
         self.translate(translation)
 
+        self.mask = None
+
     def rasterize_to_mask(self, corner_pos, cell_size, grid_size):
-        return render_orthographic(
-            self.vertices,
-            self.faces,
-            corner_pos,
-            cell_size,
-            grid_size,
-        )
+        if self.mask is None:
+            self.mask = render_orthographic(
+                self.vertices,
+                self.faces,
+                corner_pos,
+                cell_size,
+                grid_size,
+            )
+        return self.mask
 
     def rotate(self, theta):
         """
@@ -143,6 +148,7 @@ class ThreedfScene:
         with open(pickle_path, "rb") as f:
             all_info = pickle.load(f)
 
+        self.categories = categories
         self.num_categories = len(categories)
         self.scene_id = all_info["scene_id"]
         self.floor_verts = all_info["floor_verts"]
@@ -153,6 +159,15 @@ class ThreedfScene:
         )
         self.cell_size = room_largest_dim / grid_size
         self.grid_size = grid_size
+
+        self.floor_mask = render_orthographic(
+            self.floor_verts,
+            self.floor_fs,
+            self.corner_pos,
+            self.cell_size,
+            self.grid_size,
+        )
+        self.floor_mask = np.asarray(self.floor_mask, dtype=bool)
 
         self.furniture = []
         for instance, bbox in zip(all_info["furnitures"], all_info["bboxes"]):
@@ -189,15 +204,7 @@ class ThreedfScene:
         fastsynth_input = np.zeros((num_channels, self.grid_size, self.grid_size))
 
         # start with floor and wall
-        floor_mask = render_orthographic(
-            self.floor_verts,
-            self.floor_fs,
-            self.corner_pos,
-            self.cell_size,
-            self.grid_size,
-        )
-        floor_mask = ~np.asarray(floor_mask, dtype=bool)
-        floor_mask = np.asarray(floor_mask, dtype=np.float32)
+        floor_mask = np.array(self.floor_mask, dtype=np.float32)
         fastsynth_input[1] = floor_mask
 
         # wall
@@ -252,7 +259,6 @@ class ThreedfScene:
         return bag
 
     def convert_to_image(self):
-        num_categories = None
         rgb_image = np.zeros((self.grid_size, self.grid_size, 3))
         floor_mask = render_orthographic(
             self.floor_verts,
@@ -272,9 +278,39 @@ class ThreedfScene:
 
         return rgb_image
 
+    def to_json(self):
+        output_dict = {}
+        output_dict["vertices"] = self.floor_verts.tolist()
+        output_dict["faces"] = self.floor_fs.tolist()
+        output_dict["scene_id"] = self.scene_id
+
+        objects = []
+        for furniture_piece in self.furniture:
+            object_info = {
+                "translation": furniture_piece.center.tolist(),
+                "size": furniture_piece.size.tolist(),
+                "rotation": [furniture_piece.rot],
+                "category": self.categories[furniture_piece.id],
+            }
+            objects.append(object_info)
+
+        output_dict["objects"] = objects
+
+        with open(output_path, "w") as f:
+            json.dump(output_dict, f, indent=4)
+
 
 class ThreedfDataset:
-    def __init__(self, input_dir, dataset_type, room_type, bounds_file_path, grid_size):
+    def __init__(
+            self, 
+            input_dir, 
+            dataset_type, 
+            room_type, 
+            bounds_file_path, 
+            grid_size,
+            use_ordering=False,
+            scene_ids=None,
+        ):
         threedf_to_atiss_category = get_threedf_to_atiss_category(room_type)
         self.categories = get_categories_list(room_type)
         self.dataset_type = dataset_type
@@ -301,7 +337,30 @@ class ThreedfDataset:
             if len(scene.furniture) > 0:
                 scenes.append(scene)
 
-        self.scenes = scenes
+        if scene_ids is None:
+            self.scenes = scenes
+        else:
+            self.scenes = [scene for scene in scenes if scene.scene_id in scene_ids]
+
+        if use_ordering:
+            # Extract basic dataset statistics to generate object ordering
+            # score = average size of category * frequency of occurence
+            category_id_to_sizes = defaultdict(list)
+            total_num_objects = 0
+            for scene in scenes:
+                for object in scene.objects:
+                    size = object.size
+                    category_id_to_sizes[object.id].append((size[0] + size[2]) / 2)
+                    total_num_objects += 1
+
+            category_id_to_score = dict()
+            for category_id, sizes in category_id_to_sizes.items():
+                category_id_to_score[category_id] = np.mean(sizes) * (
+                    len(sizes) / total_num_objects
+                )
+            self.category_id_to_score = category_id_to_score
+        else:
+            self.category_id_to_score = None
 
     # From LatentDataset of Fastsynth
     def prepare_same_category_batches(self, batch_size):
@@ -340,15 +399,35 @@ class ThreedfDataset:
             indices = np.arange(len(scene.furniture))
             np.random.shuffle(indices)
 
-            # Want to also include choosing entire scene and predicting stop
-            num_objects = np.random.randint(low=0, high=len(indices) + 1)
-            object_indices = indices[:num_objects]
+            if self.category_id_to_score is None:
+                # Want to also include choosing entire scene and predicting stop
+                num_objects = np.random.randint(low=0, high=len(indices) + 1)
+                object_indices = indices[:num_objects]
 
-            if num_objects == len(indices):
-                t_cat_raw = self.categories.index("stop")
+                if num_objects == len(indices):
+                    t_cat_raw = self.categories.index("stop")
+                else:
+                    query_index = indices[num_objects]
+                    t_cat_raw = scene.furniture[query_index].id
             else:
-                query_index = indices[num_objects]
-                t_cat_raw = scene.furniture[query_index].id
+                while True:
+                    num_objects = np.random.randint(low=0, high=len(indices) + 1)
+                    object_indices = indices[:num_objects]
+
+                    if num_objects == len(indices):
+                        t_cat_raw = self.categories.index("stop")
+                        break
+                    else:
+                        query_index = indices[num_objects]
+                        t_cat_raw = scene.furniture[query_index].id
+                        query_score = self.category_id_to_score[t_cat_raw]
+                        valid = True
+                        for obj_idx in object_indices:
+                            obj_id = scene.furniture[obj_idx].id
+                            if query_score > self.category_id_to_score[obj_id]:
+                                valid = False
+                        if valid:
+                            break
 
             input_img_raw = scene.to_fastsynth_inputs(object_indices=object_indices)
             catcount_raw = scene.get_bag_of_categories(object_indices=object_indices)

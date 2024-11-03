@@ -10,6 +10,7 @@ from scipy.ndimage import distance_transform_edt
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import csv
 
 # Get the absolute path to the root of the project by navigating up two levels from this file
 project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -66,6 +67,21 @@ def get_data_root_dir():
         root_dir = os.path.dirname(os.path.abspath(__file__))
         return f"{root_dir}/data"
 
+
+def read_csv_split(file_path):
+    with open(file_path, 'r') as f:
+        reader = csv.reader(f, delimiter=',', quotechar='|')
+        train_ids = []
+        val_ids = []
+        for row in reader:
+            if row[1] == 'train':
+                train_ids.append(row[0])
+            elif row[1] == 'val':
+                val_ids.append(row[0])
+            else:
+                raise ValueError("found unexpected value in csv file")
+
+    return train_ids, val_ids
 
 def save_input_img_as_png(input_img, img_index=0, save_path="output_img"):
     # Ensure input is a PyTorch tensor

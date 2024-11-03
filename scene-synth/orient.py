@@ -306,6 +306,7 @@ if __name__ == "__main__":
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
+    parser.add_argument("--split-file", type=str, default=None)
 
     args = parser.parse_args()
     # outdir = f'./output/{args.save_dir}'
@@ -325,21 +326,40 @@ if __name__ == "__main__":
     num_categories = len(categories)
     num_input_channels = num_categories + 6
 
-    dataset = ThreedfDataset(
-        args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
-    )
-    valid_dataset = ThreedfDataset(
-        args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
-    )
-    # Weird workaround but fine I guess
-    indices = np.arange(len(dataset))
-    np.random.shuffle(indices)
-    train_size = int(0.8 * len(indices))
+    if args.split_file is None:
+        dataset = ThreedfDataset(
+            args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
+        )
+        valid_dataset = ThreedfDataset(
+            args.input_dir, "orient_dims", args.room_type, args.bounds_file, args.grid_size
+        )
+        # Weird workaround but fine I guess
+        indices = np.arange(len(dataset))
+        np.random.shuffle(indices)
+        train_size = int(0.8 * len(indices))
 
-    train_scenes = [dataset.scenes[idx] for idx in indices[:train_size]]
-    val_scenes = [dataset.scenes[idx] for idx in indices[train_size:]]
-    dataset.scenes = train_scenes
-    valid_dataset.scene = val_scenes
+        train_scenes = [dataset.scenes[idx] for idx in indices[:train_size]]
+        val_scenes = [dataset.scenes[idx] for idx in indices[train_size:]]
+        dataset.scenes = train_scenes
+        valid_dataset.scene = val_scenes
+    else:
+        train_ids, val_ids = utils.read_csv_split(args.split_file)
+        dataset = ThreedfDataset(
+            args.input_dir, 
+            "orient_dims", 
+            args.room_type, 
+            args.bounds_file, 
+            args.grid_size,
+            scene_ids = train_ids,
+        )
+        valid_dataset = ThreedfDataset(
+            args.input_dir, 
+            "orient_dims", 
+            args.room_type, 
+            args.bounds_file, 
+            args.grid_size,
+            scene_ids = val_ids,
+        )
 
     # Put this here right away in case the creation of the data loader reads and
     #    caches the length of the dataset
