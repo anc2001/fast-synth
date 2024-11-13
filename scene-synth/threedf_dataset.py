@@ -8,6 +8,7 @@ import cv2
 import torch
 from collections import defaultdict
 import matplotlib.pyplot as plt
+from torch.utils.data import Dataset
 
 from threedftoolbox.render.render_depth import render
 from threedftoolbox.atiss_furniture_config import (
@@ -56,7 +57,9 @@ def render_orthographic(verts, faces, corner_pos, cell_size, grid_size, flat=Tru
 def get_threedf_to_atiss_category(room_type):
     if room_type == "bedroom":
         return THREED_FRONT_BEDROOM_FURNITURE
-    elif room_type == "living_room":
+    elif room_type == "livingroom":
+        return THREED_FRONT_LIVINGROOM_FURNITURE
+    elif room_type == "diningroom":
         return THREED_FRONT_LIVINGROOM_FURNITURE
     elif room_type == "library":
         return THREED_FRONT_LIBRARY_FURNITURE
@@ -69,7 +72,11 @@ def get_categories_list(room_type):
         return ["stop"] + np.unique(
             list(THREED_FRONT_BEDROOM_FURNITURE.values())
         ).tolist()
-    elif room_type == "living_room":
+    elif room_type == "livingroom":
+        return ["stop"] + np.unique(
+            list(THREED_FRONT_LIVINGROOM_FURNITURE.values())
+        ).tolist()
+    elif room_type == "diningroom":
         return ["stop"] + np.unique(
             list(THREED_FRONT_LIVINGROOM_FURNITURE.values())
         ).tolist()
@@ -278,7 +285,7 @@ class ThreedfScene:
 
         return rgb_image
 
-    def to_json(self):
+    def to_json(self, output_path):
         output_dict = {}
         output_dict["vertices"] = self.floor_verts.tolist()
         output_dict["faces"] = self.floor_fs.tolist()
@@ -300,7 +307,7 @@ class ThreedfScene:
             json.dump(output_dict, f, indent=4)
 
 
-class ThreedfDataset:
+class ThreedfDataset(Dataset):
     def __init__(
             self, 
             input_dir, 

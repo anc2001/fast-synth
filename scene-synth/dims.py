@@ -236,9 +236,8 @@ if __name__ == "__main__":
     latent_size = 10
     hidden_size = 40
     output_size = 2
-    batch_size = 64
+    batch_size = 16 
     log_every = 50
-    save_every = 5
 
     which_to_load = 45
 
@@ -253,6 +252,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=6)
     parser.add_argument("--grid-size", type=int, default=256)
     parser.add_argument("--num-epochs", type=int, default=1000)
+    parser.add_argument("--save-every", type=int, default=5)
 
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
@@ -272,6 +272,7 @@ if __name__ == "__main__":
     categories = get_categories_list(args.room_type)
     num_categories = len(categories)
     num_input_channels = num_categories + 6
+    save_every = args.save_every
 
     logfile = open(f"{outdir}/log_dims.txt", "w")
 
@@ -467,7 +468,7 @@ if __name__ == "__main__":
         if e % save_every == 0:
             # validate()
             model.save(f"{outdir}/model_dims_{e}.pt")
-            optimizers.save(f"{outdir}/opt_dims_{e}.pt")
+            # optimizers.save(f"{outdir}/opt_dims_{e}.pt")
 
     def validate():
         LOG("Validating")

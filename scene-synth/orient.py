@@ -285,9 +285,8 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    batch_size = 8
+    batch_size = 16
     log_every = 50
-    save_every = 5
 
     use_jitter = False
     jitter_stdev = 0.01
@@ -302,6 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=6)
     parser.add_argument("--grid-size", type=int, default=256)
     parser.add_argument("--num-epochs", type=int, default=1000)
+    parser.add_argument("--save-every", type=int, default=5)
 
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
@@ -314,6 +314,7 @@ if __name__ == "__main__":
     utils.ensuredir(outdir)
     img_size = args.grid_size
     num_epochs = args.num_epochs
+    save_every = args.save_every
 
     logfile = open(f"{outdir}/log_orient.txt", "w")
 
@@ -478,7 +479,7 @@ if __name__ == "__main__":
         if e % save_every == 0:
             # validate()
             model.save(f"{outdir}/model_orient_{e}.pt")
-            optimizers.save(f"{outdir}/opt_orient_{e}.pt")
+            # optimizers.save(f"{outdir}/opt_orient_{e}.pt")
 
     def validate():
         LOG("Validating")
