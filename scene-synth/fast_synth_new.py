@@ -21,7 +21,7 @@ from dims import latent_size as dims_latent_size
 from dims import hidden_size as dims_hidden_size
 from models.utils import inverse_xform_img
 
-from utils import save_input_img_as_png
+from utils import save_input_img_as_png, read_csv_split
 
 from threedf_dataset import ThreedfDataset, ThreedfFurniture, get_categories_list
 
@@ -42,8 +42,7 @@ def sample_location(loc_model, input_img, category, return_map=False, debug_dir=
         ]
         # Mask out locations occupied by objects and outside room
         current_room = input_img.squeeze(0)
-        outputs[current_room[0] == 1] = 0
-        outputs[current_room[1] > 0] = 0
+        outputs[current_room[1] == 0] = 0
         location_map = outputs.cpu()
 
     location_map = location_map / location_map.sum()
@@ -96,11 +95,8 @@ def generate_scene(
 ):
     iteration = 0
     while True:
-        if debug_dir is not None:
-            save_dir = debug_dir / str(iteration)
-            save_dir.mkdir(exist_ok=True, parents=True)
-        else:
-            save_dir = None
+        if iteration >= 100:
+            break
 
         input_img = (
             torch.tensor(scene.to_fastsynth_inputs(), dtype=torch.float32)
@@ -116,6 +112,12 @@ def generate_scene(
         category = sample_category(cat_model, input_img, cats)
         if categories[category] == "stop":
             break
+
+        if debug_dir is not None:
+            save_dir = debug_dir / str(iteration)
+            save_dir.mkdir(exist_ok=True, parents=True)
+        else:
+            save_dir = None
 
         x, y = sample_location(loc_model, input_img, category, debug_dir=save_dir)
 
@@ -226,6 +228,7 @@ def load_orient_model(checkpoint_path, num_input_channels, device):
     )
     orient_model.load(checkpoint_path)
     orient_model.testing = True
+    orient_model.snapping = True
     orient_model = orient_model.to(device)
     orient_model.eval()
 
@@ -252,26 +255,23 @@ if __name__ == "__main__":
         "--save-dir", required=True, type=Path, help="save directory for models"
     )
     parser.add_argument("--num-scenes", type=int, default=25)
-    parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--cat-name", type=str, required=True)
-    parser.add_argument("--dims-name", type=str, required=True)
-    parser.add_argument("--loc-name", type=str, required=True)
-    parser.add_argument("--orient-name", type=str, required=True)
+    parser.add_argument("--cat-name", type=str, default="nextcat_25.pt")
+    parser.add_argument("--dims-name", type=str, default="model_dims_125.pt") 
+    parser.add_argument("--loc-name", type=str, default="location_100.pt")
+    parser.add_argument("--orient-name", type=str, default="model_orient_125.pt")
 
     parser.add_argument("--grid-size", type=int, default=256)
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
+    parser.add_argument("--split-file", type=str, required=True)
     args = parser.parse_args()
 
     categories = get_categories_list(args.room_type)
     num_categories = len(categories)
     num_input_channels = num_categories + 6
 
-    cat_dataset = ThreedfDataset(
-        args.input_dir, "cat", args.room_type, args.bounds_file, args.grid_size
-    )
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -292,13 +292,31 @@ if __name__ == "__main__":
         args.save_dir / args.dims_name, num_input_channels, device
     )
 
-    np.random.seed(seed=args.seed)
+    _, val_ids = read_csv_split(args.split_file)
+    cat_dataset = ThreedfDataset(
+        args.input_dir, 
+        "cat", 
+        args.room_type, 
+        args.bounds_file, 
+        args.grid_size,
+        scene_ids = val_ids,
+    )
     scenes = cat_dataset.scenes
     np.random.shuffle(scenes)
-    generated_scenes = []
-    for scene_idx, scene in enumerate(tqdm(scenes[: args.num_scenes])):
+
+    output_dir = args.save_dir / "generated_scenes"
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir()
+
+    scene_indices = np.arange(len(scenes))
+    np.random.shuffle(scene_indices)
+    for scene_num in range(args.num_scenes):
+        scene_idx = scene_indices[scene_num % len(scenes)]
+        scene = scenes[scene_idx]
         if args.debug:
-            scene_debug_dir = debug_dir / f"scene_{scene_idx:03d}"
+            scene_debug_dir = output_dir / f"scene_{scene_num:03d}" / "debug"
+            scene_debug_dir.mkdir(parents=True)
         else:
             scene_debug_dir = None
 
@@ -314,4 +332,9 @@ if __name__ == "__main__":
             device,
             debug_dir=scene_debug_dir,
         )
-        generated_scenes.append(generated_scene)
+        # Export scene
+        scene_output_dir = output_dir / f"scene_{scene_num:03d}"
+        scene_output_dir.mkdir(exist_ok=True)
+        generated_scene.to_json(scene_output_dir / "scene.json")
+        img = scene.convert_to_image()
+        Image.fromarray(np.uint8(img * 255)).save(scene_output_dir / "scene_viz.png")

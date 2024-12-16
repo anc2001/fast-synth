@@ -296,7 +296,7 @@ def snap_orient(orient):
     ]
     sims = torch.stack(sims, dim=1)
     maxvals, indices = sims.max(dim=1)
-    return CARDINAL_DIRECTIONS[indices].cuda()
+    return CARDINAL_DIRECTIONS[indices.cpu()].cuda()
 
 
 def should_snap(orient):

@@ -29,8 +29,7 @@ def sample_location(loc_model, input_img, category, return_map=False, debug_dir=
         ]
         # Mask out locations occupied by objects and outside room
         current_room = input_img.squeeze(0)
-        outputs[current_room[0] == 1] = 0
-        outputs[current_room[1] > 0] = 0
+        outputs[current_room[1] == 0] = 0
         location_map = outputs.cpu()
 
     location_map = location_map / location_map.sum()
@@ -168,4 +167,8 @@ if __name__ == "__main__":
 
             img = scene.convert_to_image()
             Image.fromarray(np.uint8(img * 255)).save(save_dir / 'scene.png')
+
+            img[location_map > 0.1] = [1.0, 0.0, 0.0]
+            Image.fromarray(np.uint8(img * 255)).save(save_dir / 'scene_dist.png')
+
             np.savez(save_dir / 'location_pdf', location_map)

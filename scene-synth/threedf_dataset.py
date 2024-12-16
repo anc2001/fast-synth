@@ -6,6 +6,8 @@ from tqdm import tqdm
 from numba import jit
 import cv2
 import torch
+import random
+import json
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
@@ -282,6 +284,13 @@ class ThreedfScene:
                 self.corner_pos, self.cell_size, self.grid_size
             ).astype(bool)
             rgb_image[furniture_mask] = colors(furniture_piece.id)[:3]
+            furniture_piece.rot
+
+            front_centroid = (furniture_piece.vertices[0] + furniture_piece.vertices[1]) / 2
+            coords = (front_centroid - self.corner_pos) / self.cell_size
+            x_coord = int(coords[0])
+            y_coord = int(coords[2])
+            rgb_image[x_coord-1 : x_coord+1, y_coord-1 : y_coord+1] = [1.0, 0, 0]
 
         return rgb_image
 
@@ -383,12 +392,16 @@ class ThreedfDataset(Dataset):
             for idx, scene in enumerate(self.scenes):
                 for furniture_piece in scene.furniture:
                     self.cat_to_idx_list[furniture_piece.id].append(idx)
+            self.available_cats = []
+            for cat_id, indices in self.cat_to_idx_list.items():
+                if len(indices) > batch_size:
+                    self.available_cats.append(cat_id)
 
         assert len(self) % batch_size == 0
         num_batches = len(self) // batch_size
         self.same_category_batch_indices = []
         for _ in range(num_batches):
-            cat_index = np.random.randint(1, len(self.categories))
+            cat_index = random.choice(self.available_cats)
             for _ in range(batch_size):
                 self.same_category_batch_indices.append(cat_index)
 

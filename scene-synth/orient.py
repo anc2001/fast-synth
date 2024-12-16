@@ -285,7 +285,6 @@ class Optimizers:
 # ---------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    batch_size = 16
     log_every = 50
 
     use_jitter = False
@@ -307,6 +306,7 @@ if __name__ == "__main__":
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
     parser.add_argument("--split-file", type=str, default=None)
+    parser.add_argument("--batch-size", type=int, default=16)
 
     args = parser.parse_args()
     # outdir = f'./output/{args.save_dir}'
@@ -315,6 +315,7 @@ if __name__ == "__main__":
     img_size = args.grid_size
     num_epochs = args.num_epochs
     save_every = args.save_every
+    batch_size = args.batch_size
 
     logfile = open(f"{outdir}/log_orient.txt", "w")
 

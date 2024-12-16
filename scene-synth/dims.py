@@ -236,7 +236,6 @@ if __name__ == "__main__":
     latent_size = 10
     hidden_size = 40
     output_size = 2
-    batch_size = 16 
     log_every = 50
 
     which_to_load = 45
@@ -258,6 +257,8 @@ if __name__ == "__main__":
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
     parser.add_argument("--split-file", type=str, default=None)
+    parser.add_argument("--batch-size", type=int, default=16)
+
     parser.add_argument("--no-cuda", action="store_true")
     args = parser.parse_args()
 
@@ -273,6 +274,7 @@ if __name__ == "__main__":
     num_categories = len(categories)
     num_input_channels = num_categories + 6
     save_every = args.save_every
+    batch_size = args.batch_size 
 
     logfile = open(f"{outdir}/log_dims.txt", "w")
 
