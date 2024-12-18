@@ -256,10 +256,10 @@ if __name__ == "__main__":
     )
     parser.add_argument("--num-scenes", type=int, default=25)
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--cat-name", type=str, default="nextcat_25.pt")
-    parser.add_argument("--dims-name", type=str, default="model_dims_125.pt") 
+    parser.add_argument("--cat-name", type=str, default="nextcat_50.pt")
+    parser.add_argument("--dims-name", type=str, default="model_dims_200.pt") 
     parser.add_argument("--loc-name", type=str, default="location_100.pt")
-    parser.add_argument("--orient-name", type=str, default="model_orient_125.pt")
+    parser.add_argument("--orient-name", type=str, default="model_orient_200.pt")
 
     parser.add_argument("--grid-size", type=int, default=256)
     parser.add_argument("--room-type", type=str, required=True)
@@ -311,7 +311,7 @@ if __name__ == "__main__":
 
     scene_indices = np.arange(len(scenes))
     np.random.shuffle(scene_indices)
-    for scene_num in range(args.num_scenes):
+    for scene_num in tqdm(range(args.num_scenes)):
         scene_idx = scene_indices[scene_num % len(scenes)]
         scene = scenes[scene_idx]
         if args.debug:

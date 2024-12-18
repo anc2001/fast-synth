@@ -90,6 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--input-dir", type=str, required=True)
     parser.add_argument("--split-file", type=str, default=None)
     parser.add_argument("--use-ordering", action="store_true")
+    parser.add_argument("--keep-only-current", action="store_true")
     args = parser.parse_args()
 
     batch_size = args.batch_size
@@ -234,9 +235,15 @@ if __name__ == "__main__":
                     torch.save(
                         model.state_dict(), f"{save_dir}/nextcat_{current_epoch}.pt"
                     )
-                    torch.save(
-                        optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt"
-                    )
+#                    torch.save(
+#                        optimizer.state_dict(), f"{save_dir}/nextcat_optim_backup.pt"
+#                    )
+
+                    # Also remove last checkpoint
+                    last_epoch_path = Path(f"{save_dir}/nextcat_{current_epoch - save_every}.pt")
+                    if args.keep_only_current and last_epoch_path.exists():
+                        last_epoch_path.unlink()
+
                 if current_epoch == args.num_epochs:
                     print("training complete")
                     exit()

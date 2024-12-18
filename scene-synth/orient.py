@@ -12,6 +12,7 @@ import math
 from models.utils import *
 import utils
 import os
+from pathlib import Path
 from PIL import Image
 
 from threedf_dataset import ThreedfDataset, get_categories_list
@@ -307,6 +308,7 @@ if __name__ == "__main__":
     parser.add_argument("--input-dir", type=str, required=True)
     parser.add_argument("--split-file", type=str, default=None)
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--keep-only-current", action="store_true")
 
     args = parser.parse_args()
     # outdir = f'./output/{args.save_dir}'
@@ -480,6 +482,9 @@ if __name__ == "__main__":
         if e % save_every == 0:
             # validate()
             model.save(f"{outdir}/model_orient_{e}.pt")
+            last_epoch_path = Path(f"{outdir}/model_orient_{e-save_every}.pt")
+            if args.keep_only_current and last_epoch_path.exists():
+                last_epoch_path.unlink()
             # optimizers.save(f"{outdir}/opt_orient_{e}.pt")
 
     def validate():
@@ -568,8 +573,11 @@ if __name__ == "__main__":
         )
         model.train()
 
-    for e in range(num_epochs):
+    for e in range(num_epochs + 1):
         train(e)
+
+    # temporary 
+    exit()
 
     print("FINISHED TRAINING; NOW GENERATING TEST RESULTS...")
     model.eval()

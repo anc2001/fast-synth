@@ -226,10 +226,10 @@ class ThreedfScene:
 
         fastsynth_input[2] = wall_mask
 
-        if object_indices is None:
-            furniture_in_scene = self.furniture
-        else:
+        if isinstance(object_indices, list):
             furniture_in_scene = np.array(self.furniture)[object_indices].tolist()
+        else:
+            furniture_in_scene = self.furniture
 
         # object specific channels (uses helper method)
         for furniture_piece in furniture_in_scene:
@@ -258,10 +258,10 @@ class ThreedfScene:
 
     def get_bag_of_categories(self, object_indices=None):
         bag = np.zeros(self.num_categories)
-        if object_indices is None:
-            furniture_in_scene = self.furniture
-        else:
+        if isinstance(object_indices, list):
             furniture_in_scene = np.array(self.furniture)[object_indices].tolist()
+        else:
+            furniture_in_scene = self.furniture
 
         for furniture in furniture_in_scene:
             bag[furniture.id] += 1
@@ -422,7 +422,7 @@ class ThreedfDataset(Dataset):
             if self.category_id_to_score is None:
                 # Want to also include choosing entire scene and predicting stop
                 num_objects = np.random.randint(low=0, high=len(indices) + 1)
-                object_indices = indices[:num_objects]
+                object_indices = indices[:num_objects].tolist()
 
                 if num_objects == len(indices):
                     t_cat_raw = self.categories.index("stop")
@@ -432,7 +432,7 @@ class ThreedfDataset(Dataset):
             else:
                 while True:
                     num_objects = np.random.randint(low=0, high=len(indices) + 1)
-                    object_indices = indices[:num_objects]
+                    object_indices = indices[:num_objects].tolist()
 
                     if num_objects == len(indices):
                         t_cat_raw = self.categories.index("stop")
@@ -462,7 +462,7 @@ class ThreedfDataset(Dataset):
             indices = np.arange(len(scene.furniture))
             np.random.shuffle(indices)
             num_objects = np.random.randint(low=0, high=len(indices))
-            object_indices = indices[:num_objects]
+            object_indices = indices[:num_objects].tolist()
 
             input_img_raw = scene.to_fastsynth_inputs(object_indices=object_indices)
 
@@ -500,7 +500,7 @@ class ThreedfDataset(Dataset):
             indices = indices[indices != query_index]
 
             num_objects = np.random.randint(low=0, high=len(indices) + 1)
-            object_indices = indices[:num_objects]
+            object_indices = indices[:num_objects].tolist()
             query_object = scene.furniture[query_index]
 
             assert query_object.id == cat

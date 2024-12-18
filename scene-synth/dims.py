@@ -260,6 +260,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=16)
 
     parser.add_argument("--no-cuda", action="store_true")
+    parser.add_argument("--keep-only-current", action="store_true")
+
     args = parser.parse_args()
 
     img_size = args.grid_size
@@ -470,6 +472,9 @@ if __name__ == "__main__":
         if e % save_every == 0:
             # validate()
             model.save(f"{outdir}/model_dims_{e}.pt")
+            last_epoch_path = Path(f"{outdir}/model_dims_{e-save_every}.pt")
+            if args.keep_only_current and last_epoch_path.exists():
+                last_epoch_path.unlink()
             # optimizers.save(f"{outdir}/opt_dims_{e}.pt")
 
     def validate():
@@ -549,8 +554,11 @@ if __name__ == "__main__":
         LOG(f"Recon: {avg_recon_loss:4.4} | KLD: {avg_kl_loss:4.4}")
         model.train()
 
-    for e in range(num_epochs):
+    for e in range(num_epochs + 1):
         train(e)
+
+    # temporary
+    exit()
 
     print("FINISHED TRAINING; NOW GENERATING TEST RESULTS...")
     model.eval()
