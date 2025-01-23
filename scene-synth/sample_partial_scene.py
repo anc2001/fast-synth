@@ -9,6 +9,8 @@ import math
 from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
+import json
+import copy
 
 from cat import NextCategory
 from cat import latent_dim as cat_latent_dim
@@ -162,7 +164,7 @@ def generate_scene(
         # Given rotation is ccw, ours is cw
         cos, sin = (orientation[0, 0].item(), orientation[0, 1].item())
         angle = math.atan2(sin, cos)
-        rotation = np.array([-angle])
+        rotation = np.array([angle])
 
         # x and y in normalized image space
         translation = np.array([x, 0, y]) * multiplier
@@ -260,7 +262,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save-dir", required=True, type=Path, help="save directory for models"
     )
-    parser.add_argument("--num-scenes", type=int, default=25)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--cat-name", type=str, default="nextcat_50.pt")
     parser.add_argument("--dims-name", type=str, default="model_dims_200.pt") 
@@ -271,14 +272,7 @@ if __name__ == "__main__":
     parser.add_argument("--room-type", type=str, required=True)
     parser.add_argument("--bounds-file", type=str, required=True)
     parser.add_argument("--input-dir", type=str, required=True)
-    parser.add_argument("--split-file", type=str, required=True)
-    parser.add_argument("--output-name", type=str, required=True)
-    parser.add_argument(
-        "--generation-batches",
-        type=str,
-        default="0-3",
-        help="which generation batches to generate",
-    )
+    parser.add_argument("--scene-json", type=str, required=True)
     args = parser.parse_args()
 
     categories = get_categories_list(args.room_type)
@@ -286,6 +280,9 @@ if __name__ == "__main__":
     num_input_channels = num_categories + 6
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    with open(args.scene_json, "r") as f:
+        subscene_info = json.load(f)
 
     debug_dir = args.save_dir / "debug"
     if debug_dir.exists():
@@ -304,60 +301,81 @@ if __name__ == "__main__":
         args.save_dir / args.dims_name, num_input_channels, device
     )
 
-    _, val_ids = read_csv_split(args.split_file)
     cat_dataset = ThreedfDataset(
-        args.input_dir, 
-        "cat", 
-        args.room_type, 
-        args.bounds_file, 
-        args.grid_size,
-        scene_ids = val_ids,
+        args.input_dir, "cat", args.room_type, args.bounds_file, args.grid_size
     )
     scenes = cat_dataset.scenes
-    np.random.shuffle(scenes)
+    scene_id_to_scene = {scene.scene_id : scene for scene in scenes}
 
-    scene_indices = np.arange(len(scenes))
+    scene = copy.deepcopy(scene_id_to_scene[subscene_info['scene_id']])
 
-    generation_batch_start, generation_batch_end = args.generation_batches.split("-")
-    generation_batch_start = int(generation_batch_start)
-    generation_batch_end = int(generation_batch_end)
-    for generation_batch in range(generation_batch_start, generation_batch_end):
-        output_dir = (
-            args.save_dir
-            / args.output_name
-            / f"generated_scenes_{generation_batch}"
+    scene.furniture = []
+    for object_info in subscene_info["objects"]:
+        category_id = scene.categories.index(object_info['category'])
+        furniture_piece = ThreedfFurniture(
+            category_id,
+            np.array(object_info['rotation']),
+            np.array(object_info['size']),
+            np.array(object_info['translation']),
         )
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True)
+        scene.furniture.append(furniture_piece)
 
-        np.random.shuffle(scene_indices)
-        for scene_num in tqdm(range(args.num_scenes)):
-            scene_idx = scene_indices[scene_num % len(scenes)]
-            scene = scenes[scene_idx]
-            if args.debug:
-                scene_debug_dir = output_dir / f"scene_{scene_num:03d}" / "debug"
-                scene_debug_dir.mkdir(parents=True)
-            else:
-                scene_debug_dir = None
+    query_id = scene.categories.index(subscene_info["query_object"]["category"])
+    query_size = np.array(subscene_info["query_object"]["size"])
 
-            scene.furniture = []
-            with torch.no_grad():
-                generated_scene = generate_scene(
-                    scene,
-                    categories,
-                    cat_dataset.room_largest_dim,
-                    cat_model,
-                    loc_model,
-                    orient_model,
-                    dims_model,
-                    device,
-                    debug_dir=scene_debug_dir,
+    output_directory = Path(args.scene_json).parent / "fastsynth_mask" / "samples"
+    if output_directory.exists():
+        shutil.rmtree(output_directory)
+    output_directory.mkdir(parents=True) 
+
+    num_query_samples = 15
+    room_largest_dim = 6.2
+    for i in range(num_query_samples):
+        output_dir = output_directory / f"sample_{i}"
+        output_dir.mkdir()
+        save_dir = output_dir
+
+        with torch.no_grad():
+            fastsynth_input = scene.to_fastsynth_inputs()
+            input_img = (
+                torch.tensor(fastsynth_input, dtype=torch.float32).unsqueeze(0).to(device)
+            )
+
+            category = query_id
+            x, y = sample_location(loc_model, input_img, category, debug_dir=save_dir)
+
+            translation = torch.tensor([[x, y]], device=input_img.device)
+            orientation = torch.tensor(
+                [[math.cos(0), math.sin(0)]], device=input_img.device
+            )
+
+            input_img_orient = inverse_xform_img(
+                input_img, translation, orientation, output_size=input_img.shape[-1]
+            )
+
+            if debug_dir is not None:
+                save_input_img_as_png(
+                    input_img_orient.cpu(), save_path=save_dir / "scene_orient.jpg"
                 )
+            orientation = sample_orientation(orient_model, input_img_orient, category)
+
+            # Given rotation is ccw, ours is cw
+            cos, sin = (orientation[0, 0].item(), orientation[0, 1].item())
+            angle = math.atan2(sin, cos)
+            rotation = np.array([angle])
+
+            # x and y in normalized image space
+            multiplier = room_largest_dim / 2
+            translation = np.array([x, 0, y]) * multiplier
+
+            query_object = ThreedfFurniture(category, rotation, query_size, translation)
+            scene.furniture.append(query_object)
 
             # Export scene
-            scene_output_dir = output_dir / f"scene_{scene_num:03d}"
+            scene_output_dir = output_dir
             scene_output_dir.mkdir(exist_ok=True)
-            generated_scene.to_json(scene_output_dir / "scene.json")
+            scene.to_json(scene_output_dir / "scene.json")
             img = scene.convert_to_image()
             Image.fromarray(np.uint8(img * 255)).save(scene_output_dir / "scene_viz.png")
+
+            scene.furniture = scene.furniture[:-1]

@@ -110,7 +110,7 @@ class ThreedfFurniture:
         self.center = np.array([0.0, 0.0, 0.0])
         self.rot = 0
 
-        self.rotate(-rotation)
+        self.rotate(rotation)
         self.translate(translation)
 
         self.mask = None

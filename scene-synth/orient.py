@@ -147,7 +147,6 @@ class Model(nn.Module):
         return gdis.rsample()
 
     def generate(self, noise, walls, cat):
-
         enc_walls = self.cond_prior(cat)(walls)
         gen_out = self.generator(cat)(torch.cat([noise, enc_walls], dim=1))
         go1, go2 = torch.split(gen_out, 1, dim=1)
